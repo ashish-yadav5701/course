@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <div>         
+        <h2>Employee Details</h2>  
+        <table>           
+            <tbody>             
+                <tr>                               
+                    <th>Course Title</th>               
+                    <th>Course Instructor</th>               
+                    <th>Course Duration</th>               
+                    <th>Course Description</th>                      
+                </tr>             
+                <tr>  
+                    <td><input type="text" [(ngModel)]="course.title" placeholder=" Title"></td>                 
+                    <td><input type="text" [(ngModel)]="course.instructor" placehold-er="Instructor"></td>                 
+                    <td><input type="number" [(ngModel)]="course.duration" placeholder="Course Duration"></td>                 
+                    <td><input type="text" [(ngModel)]="course.description" placeholder="Course Description"></td>                                 
+                </tr> 
+            </tbody>
+        </table>
+    </div>
+    <p>Course Title: : {{course.title}}</p>       
+    <p>Course Instructor: : {{course.instructor}}</p>       
+    <p>Course Duration: : {{course.duration}}</p>       
+    <p>Course Description: : {{course.description}}</p> 
+</body>
+</html>
