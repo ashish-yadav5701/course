@@ -1,0 +1,171 @@
+"use client"
+import React, { useState } from "react"
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  Position,
+  MarkerType,
+} from "reactflow"
+import "reactflow/dist/style.css"
+import { FileXIcon as FileXml, FileSpreadsheet, FileJson, Cog } from "lucide-react"
+
+// Custom node components
+function XMLNode({ data }) {
+  return (
+    <div className="px-4 py-2 rounded-md border-2 border-indigo-500 bg-indigo-50 shadow-md w-[140px]">
+      <div className="flex items-center gap-2">
+        <FileXml className="text-indigo-500" size={24} />
+        <span className="font-medium text-indigo-700">{data.label}</span>
+      </div>
+      <div className="mt-2 text-xs text-indigo-600">&lt;data&gt;...&lt;/data&gt;</div>
+    </div>
+  )
+}
+
+function ExcelNode({ data }) {
+  return (
+    <div className="px-4 py-2 rounded-md border-2 border-emerald-500 bg-emerald-50 shadow-md w-[140px]">
+      <div className="flex items-center gap-2">
+        <FileSpreadsheet className="text-emerald-500" size={24} />
+        <span className="font-medium text-emerald-700">{data.label}</span>
+      </div>
+      <div className="mt-2 text-xs text-emerald-600 font-mono">A1: data...</div>
+    </div>
+  )
+}
+
+function TransformerNode({ data }) {
+  return (
+    <div className="px-4 py-3 rounded-md border-2 border-gray-500 bg-gray-100 shadow-md w-[160px]">
+      <div className="flex items-center justify-center gap-2">
+        <Cog className="text-gray-700 animate-spin" size={24} />
+        <span className="font-medium text-gray-800">{data.label}</span>
+      </div>
+      <div className="mt-2 text-xs text-gray-600 text-center">Processing data...</div>
+    </div>
+  )
+}
+
+function JSONNode({ data }) {
+  return (
+    <div className="px-4 py-2 rounded-md border-2 border-amber-500 bg-amber-50 shadow-md w-[140px]">
+      <div className="flex items-center gap-2">
+        <FileJson className="text-amber-500" size={24} />
+        <span className="font-medium text-amber-700">{data.label}</span>
+      </div>
+      <div className="mt-2 text-xs text-amber-600 font-mono">
+        {"{"}
+        <br />
+        &nbsp;&nbsp;"data": ...
+        <br />
+        {"}"}
+      </div>
+    </div>
+  )
+}
+
+// Node type map
+const nodeTypes = {
+  xmlInput: XMLNode,
+  excelInput: ExcelNode,
+  transformer: TransformerNode,
+  jsonOutput: JSONNode,
+}
+
+// Initial node positions
+const initialNodes = [
+  {
+    id: "xml",
+    type: "xmlInput",
+    data: { label: "XML Input" },
+    position: { x: 100, y: 50 },
+    sourcePosition: Position.Right,
+  },
+  {
+    id: "excel",
+    type: "excelInput",
+    data: { label: "Excel Input" },
+    position: { x: 100, y: 200 },
+    sourcePosition: Position.Right,
+  },
+  {
+    id: "transformer",
+    type: "transformer",
+    data: { label: "Transformer" },
+    position: { x: 350, y: 125 },
+    targetPosition: Position.Left,
+    sourcePosition: Position.Right,
+  },
+  {
+    id: "json",
+    type: "jsonOutput",
+    data: { label: "JSON Output" },
+    position: { x: 600, y: 125 },
+    targetPosition: Position.Left,
+  },
+]
+
+// Initial edge connections with enhanced visuals
+const initialEdges = [
+  {
+    id: "xml-to-transformer",
+    source: "xml",
+    target: "transformer",
+    animated: true,
+    style: { stroke: "#4f46e5", strokeWidth: 3 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: "#4f46e5",
+    },
+  },
+  {
+    id: "excel-to-transformer",
+    source: "excel",
+    target: "transformer",
+    animated: true,
+    style: { stroke: "#059669", strokeWidth: 3 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: "#059669",
+    },
+  },
+  {
+    id: "transformer-to-json",
+    source: "transformer",
+    target: "json",
+    animated: true,
+    style: { stroke: "#d97706", strokeWidth: 3 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: "#d97706",
+    },
+  },
+]
+
+export default function DataFlowDiagram() {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  return (
+    <div className="w-full h-[600px] border border-gray-200 rounded-lg shadow-sm bg-white">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.5}
+        maxZoom={1.5}
+      >
+        <Background color="#f1f5f9" gap={16} />
+        <Controls />
+        <MiniMap nodeColor="#6b7280" maskColor="rgba(0,0,0,0.05)" />
+      </ReactFlow>
+    </div>
+  )
+}
