@@ -1,106 +1,119 @@
-.flow-container {
-  width: 300px;
-  height: 50px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  overflow: hidden;
+import React from 'react';
+import ReactFlow, { ReactFlowProvider } from 'reactflow';
+import 'reactflow/dist/style.css';
+import './FlowCanvas.css';
+
+const nodes = [
+  {
+    id: '1',
+    data: { label: <div className="node-box xml">XML Input</div> },
+    position: { x: 10, y: 10 },
+    type: 'default',
+  },
+  {
+    id: '2',
+    data: { label: <div className="node-box excel">Excel Input</div> },
+    position: { x: 10, y: 60 },
+    type: 'default',
+  },
+  {
+    id: '3',
+    data: { label: <div className="node-box transform">Transform Data</div> },
+    position: { x: 180, y: 35 },
+    type: 'default',
+  },
+  {
+    id: '4',
+    data: { label: <div className="node-box json">JSON Output</div> },
+    position: { x: 360, y: 35 },
+    type: 'default',
+  },
+];
+
+const edges = [
+  {
+    id: 'e1-3',
+    source: '1',
+    target: '3',
+    animated: true,
+    style: { stroke: '#4a90e2' },
+  },
+  {
+    id: 'e2-3',
+    source: '2',
+    target: '3',
+    animated: true,
+    style: { stroke: '#7ed321' },
+  },
+  {
+    id: 'e3-4',
+    source: '3',
+    target: '4',
+    animated: true,
+    style: { stroke: '#f5a623' },
+  },
+];
+
+function FlowCanvas() {
+  return (
+    <div className="flow-wrapper">
+      <ReactFlowProvider>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          fitView
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+        />
+      </ReactFlowProvider>
+    </div>
+  );
 }
 
-/* Node styles */
-.input-node {
-  background-color: #d4f1f9;
-  border: 1px solid #88ccee;
-  border-radius: 3px;
-  padding: 2px;
-  width: 60px;
-  font-size: 8px;
-  text-align: center;
+export default FlowCanvas;
+
+
+
+.flow-wrapper {
+  width: 500px;
+  height: 100px;
+  border: 1px solid #ccc;
 }
 
-.transformer-node {
-  background-color: #ffe8cc;
-  border: 1px solid #ffaa44;
-  border-radius: 3px;
-  padding: 2px;
-  width: 80px;
-  font-size: 8px;
-  text-align: center;
+.node-box {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 2px solid #ccc;
+  font-size: 12px;
+  background-color: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  display: inline-block;
+  font-weight: 500;
+  font-family: sans-serif;
 }
 
-.output-node {
-  background-color: #d8f8d8;
-  border: 1px solid #88dd88;
-  border-radius: 3px;
-  padding: 2px;
-  width: 60px;
-  font-size: 8px;
-  text-align: center;
+/* Color themes for different nodes */
+.node-box.xml {
+  border-color: #4a90e2;
+  color: #4a90e2;
 }
 
-.node-header {
-  font-weight: bold;
-  color: #333;
+.node-box.excel {
+  border-color: #7ed321;
+  color: #7ed321;
 }
 
-/* Enhanced edge animation */
-.animated-edge {
-  animation: flowAnimation 1.5s infinite;
+.node-box.transform {
+  border-color: #50e3c2;
+  color: #50e3c2;
 }
 
-@keyframes flowAnimation {
-  0% {
-    stroke-dasharray: 5;
-    stroke-dashoffset: 20;
-  }
-  100% {
-    stroke-dasharray: 5;
-    stroke-dashoffset: 0;
-  }
-}
-
-/* Make the edge path more visible */
-.react-flow__edge-path {
-  stroke-width: 2;
-}
-
-/* Make the ReactFlow controls smaller */
-.react-flow__controls {
-  transform: scale(0.7);
-  transform-origin: bottom right;
-  display: none;
-}
-
-/* Hide attribution */
-.react-flow__attribution {
-  display: none;
-}
-
-/* Disable all interactions */
-.react-flow__node {
-  pointer-events: none;
-}
-
-.react-flow__edge {
-  pointer-events: none;
-}
-
-.react-flow__handle {
-  display: none;
-}
-
-.react-flow__background {
-  pointer-events: none;
-}
-
-.react-flow__pane {
-  cursor: default !important;
-}
-
-/* Hide any remaining interactive elements */
-.react-flow__minimap {
-  display: none;
-}
-
-.react-flow__panel {
-  display: none;
+.node-box.json {
+  border-color: #f5a623;
+  color: #f5a623;
 }
