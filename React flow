@@ -1,6 +1,6 @@
 import React from 'react';
-import ReactFlow, { ReactFlowProvider } from 'reactflow';
-import 'reactflow/dist/style.css';
+import Flow, { FlowProvider } from 'xyzflow/react';
+import 'xyzflow/react/dist/style.css'; // Make sure this is the correct CSS path
 import './FlowCanvas.css';
 
 const nodes = [
@@ -8,57 +8,35 @@ const nodes = [
     id: '1',
     data: { label: <div className="node-box xml">XML Input</div> },
     position: { x: 10, y: 10 },
-    type: 'default',
   },
   {
     id: '2',
     data: { label: <div className="node-box excel">Excel Input</div> },
     position: { x: 10, y: 60 },
-    type: 'default',
   },
   {
     id: '3',
     data: { label: <div className="node-box transform">Transform Data</div> },
     position: { x: 180, y: 35 },
-    type: 'default',
   },
   {
     id: '4',
     data: { label: <div className="node-box json">JSON Output</div> },
     position: { x: 360, y: 35 },
-    type: 'default',
   },
 ];
 
 const edges = [
-  {
-    id: 'e1-3',
-    source: '1',
-    target: '3',
-    animated: true,
-    style: { stroke: '#4a90e2' },
-  },
-  {
-    id: 'e2-3',
-    source: '2',
-    target: '3',
-    animated: true,
-    style: { stroke: '#7ed321' },
-  },
-  {
-    id: 'e3-4',
-    source: '3',
-    target: '4',
-    animated: true,
-    style: { stroke: '#f5a623' },
-  },
+  { id: 'e1-3', source: '1', target: '3', animated: true, style: { stroke: '#4a90e2' } },
+  { id: 'e2-3', source: '2', target: '3', animated: true, style: { stroke: '#7ed321' } },
+  { id: 'e3-4', source: '3', target: '4', animated: true, style: { stroke: '#f5a623' } },
 ];
 
 function FlowCanvas() {
   return (
     <div className="flow-wrapper">
-      <ReactFlowProvider>
-        <ReactFlow
+      <FlowProvider>
+        <Flow
           nodes={nodes}
           edges={edges}
           fitView
@@ -70,50 +48,4 @@ function FlowCanvas() {
           nodesConnectable={false}
           elementsSelectable={false}
         />
-      </ReactFlowProvider>
-    </div>
-  );
-}
-
-export default FlowCanvas;
-
-
-
-.flow-wrapper {
-  width: 500px;
-  height: 100px;
-  border: 1px solid #ccc;
-}
-
-.node-box {
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 2px solid #ccc;
-  font-size: 12px;
-  background-color: white;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-  display: inline-block;
-  font-weight: 500;
-  font-family: sans-serif;
-}
-
-/* Color themes for different nodes */
-.node-box.xml {
-  border-color: #4a90e2;
-  color: #4a90e2;
-}
-
-.node-box.excel {
-  border-color: #7ed321;
-  color: #7ed321;
-}
-
-.node-box.transform {
-  border-color: #50e3c2;
-  color: #50e3c2;
-}
-
-.node-box.json {
-  border-color: #f5a623;
-  color: #f5a623;
-}
+      </FlowProvider>
