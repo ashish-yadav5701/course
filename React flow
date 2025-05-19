@@ -1,271 +1,106 @@
-.flowWrapper {
-  width: 100%;
-  height: 600px;
-  background-color: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.05);
+.flow-container {
+  width: 300px;
+  height: 50px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.node {
-  width: 140px;
-  padding: 8px 12px;
-  border: 2px solid #ccc;
-  border-radius: 8px;
-  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.1);
-  background-color: #f9fafb;
-  font-size: 14px;
-}
-
-.nodeHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-}
-
-.nodeDesc {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #555;
-  font-family: monospace;
-}
-
-.center {
-  justify-content: center;
+/* Node styles */
+.input-node {
+  background-color: #d4f1f9;
+  border: 1px solid #88ccee;
+  border-radius: 3px;
+  padding: 2px;
+  width: 60px;
+  font-size: 8px;
   text-align: center;
 }
 
-.icon {
-  flex-shrink: 0;
+.transformer-node {
+  background-color: #ffe8cc;
+  border: 1px solid #ffaa44;
+  border-radius: 3px;
+  padding: 2px;
+  width: 80px;
+  font-size: 8px;
+  text-align: center;
 }
 
-.xml {
-  color: #6366f1;
+.output-node {
+  background-color: #d8f8d8;
+  border: 1px solid #88dd88;
+  border-radius: 3px;
+  padding: 2px;
+  width: 60px;
+  font-size: 8px;
+  text-align: center;
 }
 
-.excel {
-  color: #10b981;
+.node-header {
+  font-weight: bold;
+  color: #333;
 }
 
-.json {
-  color: #f59e0b;
+/* Enhanced edge animation */
+.animated-edge {
+  animation: flowAnimation 1.5s infinite;
 }
 
-.transformer {
-  color: #4b5563;
-}
-
-.spin {
-  animation: spin 1.5s linear infinite;
-}
-
-@keyframes spin {
+@keyframes flowAnimation {
   0% {
-    transform: rotate(0deg);
+    stroke-dasharray: 5;
+    stroke-dashoffset: 20;
   }
-
   100% {
-    transform: rotate(360deg);
+    stroke-dasharray: 5;
+    stroke-dashoffset: 0;
   }
 }
 
-.nodeXml {
-  border-color: #6366f1;
-  background-color: #eef2ff;
+/* Make the edge path more visible */
+.react-flow__edge-path {
+  stroke-width: 2;
 }
 
-.nodeExcel {
-  border-color: #10b981;
-  background-color: #ecfdf5;
+/* Make the ReactFlow controls smaller */
+.react-flow__controls {
+  transform: scale(0.7);
+  transform-origin: bottom right;
+  display: none;
 }
 
-.nodeTransformer {
-  border-color: #6b7280;
-  background-color: #f3f4f6;
-  width: 160px;
+/* Hide attribution */
+.react-flow__attribution {
+  display: none;
 }
 
-.nodeJson {
-  border-color: #f59e0b;
-  background-color: #fffbeb;
+/* Disable all interactions */
+.react-flow__node {
+  pointer-events: none;
 }
 
-
-
-
-
-
-
-import React from "react"
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  MarkerType,
-  Position,
-} from "reactflow"
-import "reactflow/dist/style.css"
-import { FileX as FileXml, FileSpreadsheet, FileJson, Cog } from "lucide-react"
-import styles from "./DataFlowDiagram.module.css"
-
-// Custom nodes
-function XMLNode({ data }) {
-  return (
-    <div className={`${styles.node} ${styles.nodeXml}`}>
-      <div className={styles.nodeHeader}>
-        <FileXml className={`${styles.icon} ${styles.xml}`} size={24} />
-        <span>{data.label}</span>
-      </div>
-      <div className={styles.nodeDesc}>&lt;data&gt;...&lt;/data&gt;</div>
-    </div>
-  )
+.react-flow__edge {
+  pointer-events: none;
 }
 
-function ExcelNode({ data }) {
-  return (
-    <div className={`${styles.node} ${styles.nodeExcel}`}>
-      <div className={styles.nodeHeader}>
-        <FileSpreadsheet className={`${styles.icon} ${styles.excel}`} size={24} />
-        <span>{data.label}</span>
-      </div>
-      <div className={styles.nodeDesc}>A1: data...</div>
-    </div>
-  )
+.react-flow__handle {
+  display: none;
 }
 
-function TransformerNode({ data }) {
-  return (
-    <div className={`${styles.node} ${styles.nodeTransformer}`}>
-      <div className={`${styles.nodeHeader} ${styles.center}`}>
-        <Cog className={`${styles.icon} ${styles.spin} ${styles.transformer}`} size={24} />
-        <span>{data.label}</span>
-      </div>
-      <div className={styles.nodeDesc}>Processing data...</div>
-    </div>
-  )
+.react-flow__background {
+  pointer-events: none;
 }
 
-function JSONNode({ data }) {
-  return (
-    <div className={`${styles.node} ${styles.nodeJson}`}>
-      <div className={styles.nodeHeader}>
-        <FileJson className={`${styles.icon} ${styles.json}`} size={24} />
-        <span>{data.label}</span>
-      </div>
-      <div className={styles.nodeDesc}>
-        {"{"}
-        <br />
-        &nbsp;&nbsp;"data": ...
-        <br />
-        {"}"}
-      </div>
-    </div>
-  )
+.react-flow__pane {
+  cursor: default !important;
 }
 
-// Map custom node types
-const nodeTypes = {
-  xmlInput: XMLNode,
-  excelInput: ExcelNode,
-  transformer: TransformerNode,
-  jsonOutput: JSONNode,
+/* Hide any remaining interactive elements */
+.react-flow__minimap {
+  display: none;
 }
 
-// Initial nodes
-const initialNodes = [
-  {
-    id: "xml",
-    type: "xmlInput",
-    data: { label: "XML Input" },
-    position: { x: 100, y: 50 },
-    sourcePosition: Position.Right,
-  },
-  {
-    id: "excel",
-    type: "excelInput",
-    data: { label: "Excel Input" },
-    position: { x: 100, y: 200 },
-    sourcePosition: Position.Right,
-  },
-  {
-    id: "transformer",
-    type: "transformer",
-    data: { label: "Transformer" },
-    position: { x: 350, y: 125 },
-    targetPosition: Position.Left,
-    sourcePosition: Position.Right,
-  },
-  {
-    id: "json",
-    type: "jsonOutput",
-    data: { label: "JSON Output" },
-    position: { x: 600, y: 125 },
-    targetPosition: Position.Left,
-  },
-]
-
-// Initial edges
-const initialEdges = [
-  {
-    id: "xml-to-transformer",
-    source: "xml",
-    target: "transformer",
-    animated: true,
-    style: { stroke: "#6366f1", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#6366f1",
-    },
-  },
-  {
-    id: "excel-to-transformer",
-    source: "excel",
-    target: "transformer",
-    animated: true,
-    style: { stroke: "#10b981", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#10b981",
-    },
-  },
-  {
-    id: "transformer-to-json",
-    source: "transformer",
-    target: "json",
-    animated: true,
-    style: { stroke: "#f59e0b", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#f59e0b",
-    },
-  },
-]
-
-export default function DataFlowDiagram() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-
-  return (
-    <div className={styles.flowWrapper}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.5}
-        maxZoom={1.5}
-      >
-        <Background color="#f1f5f9" gap={16} />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
-    </div>
-  )
+.react-flow__panel {
+  display: none;
 }
-
