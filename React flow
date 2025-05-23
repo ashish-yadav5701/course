@@ -1,51 +1,99 @@
-import React from 'react';
-import Flow, { FlowProvider } from 'xyzflow/react';
-import 'xyzflow/react/dist/style.css'; // Make sure this is the correct CSS path
-import './FlowCanvas.css';
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import okhttp3.*;
 
-const nodes = [
-  {
-    id: '1',
-    data: { label: <div className="node-box xml">XML Input</div> },
-    position: { x: 10, y: 10 },
-  },
-  {
-    id: '2',
-    data: { label: <div className="node-box excel">Excel Input</div> },
-    position: { x: 10, y: 60 },
-  },
-  {
-    id: '3',
-    data: { label: <div className="node-box transform">Transform Data</div> },
-    position: { x: 180, y: 35 },
-  },
-  {
-    id: '4',
-    data: { label: <div className="node-box json">JSON Output</div> },
-    position: { x: 360, y: 35 },
-  },
-];
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
-const edges = [
-  { id: 'e1-3', source: '1', target: '3', animated: true, style: { stroke: '#4a90e2' } },
-  { id: 'e2-3', source: '2', target: '3', animated: true, style: { stroke: '#7ed321' } },
-  { id: 'e3-4', source: '3', target: '4', animated: true, style: { stroke: '#f5a623' } },
-];
+public class JiraIssueCreator {
+    private static final String JIRA_URL = "https://your-domain.atlassian.net/rest/api/3/search";
+    private static final String JIRA_BULK_URL = "https://your-domain.atlassian.net/rest/api/3/issue/bulk";
+    private static final String AUTH_HEADER = "Basic YOUR_ENCODED_TOKEN"; // base64(email:API_Token)
 
-function FlowCanvas() {
-  return (
-    <div className="flow-wrapper">
-      <FlowProvider>
-        <Flow
-          nodes={nodes}
-          edges={edges}
-          fitView
-          panOnDrag={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-        />
-      </FlowProvider>
+    private static final int MAX_ISSUES = 50;
+    private static final int MAX_SIZE = 1000000; // 1 MB
+
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final OkHttpClient client = new OkHttpClient();
+
+    public void processIssues(List<CyberportIssue> issues) throws Exception {
+        List<ObjectNode> bulkList = new ArrayList<>();
+        int currentSize = 0;
+
+        for (CyberportIssue issue : issues) {
+            if (vulnExistsInJira(issue.getVulnId())) {
+                System.out.println("Skipping existing VulnID: " + issue.getVulnId());
+                continue;
+            }
+
+            ObjectNode payload = createJiraPayload(issue);
+            int size = mapper.writeValueAsBytes(payload).length;
+
+            if (bulkList.size() >= MAX_ISSUES || (currentSize + size) > MAX_SIZE) {
+                sendBulkRequest(bulkList);
+                bulkList.clear();
+                currentSize = 0;
+            }
+
+            bulkList.add(payload);
+            currentSize += size;
+        }
+
+        if (!bulkList.isEmpty()) {
+            sendBulkRequest(bulkList);
+        }
+    }
+
+    private boolean vulnExistsInJira(String vulnId) throws Exception {
+        String jql = "summary ~ \"Vuln ID: " + vulnId + "\"";
+        String encodedJql = URLEncoder.encode(jql, StandardCharsets.UTF_8);
+        HttpUrl url = HttpUrl.parse(JIRA_URL).newBuilder()
+                .addQueryParameter("jql", encodedJql)
+                .build();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", AUTH_HEADER)
+                .addHeader("Accept", "application/json")
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body().string();
+            return responseBody.contains("\"total\":") && !responseBody.contains("\"total\":0");
+        }
+    }
+
+    private ObjectNode createJiraPayload(CyberportIssue issue) {
+        ObjectNode fields = mapper.createObjectNode();
+        fields.putObject("project").put("key", "PROJ");
+        fields.put("summary", "Vuln ID: " + issue.getVulnId() + " |" + issue.getHostname() + " |" + issue.getCve());
+        fields.put("description", "Auto-generated from CyberportIssue. Please update as needed.");
+        fields.putObject("issuetype").put("name", "Task");
+
+        ObjectNode issueNode = mapper.createObjectNode();
+        issueNode.set("fields", fields);
+        return issueNode;
+    }
+
+    private void sendBulkRequest(List<ObjectNode> issues) throws Exception {
+        ObjectNode body = mapper.createObjectNode();
+        body.set("issueUpdates", mapper.valueToTree(issues));
+
+        Request request = new Request.Builder()
+                .url(JIRA_BULK_URL)
+                .addHeader("Authorization", AUTH_HEADER)
+                .addHeader("Content-Type", "application/json")
+                .post(RequestBody.create(
+                        mapper.writeValueAsBytes(body),
+                        MediaType.parse("application/json")
+                ))
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            String responseBody = response.body().string();
+            System.out.println("Jira response: " + responseBody);
+        }
+    }
+}
