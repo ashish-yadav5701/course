@@ -1,99 +1,77 @@
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import okhttp3.*;
+public void transitionJiraIssueToDone(
+        String jiraPAT,
+        String projectKey,
+        Set<String> jiraSet,
+        Set<String> cyberPortSet,
+        Map<String, String> jiraKeyToVulns,
+        String transitionId
+) {
+    Set<String> resolvedJiraKeySet = getResolvedJiralds(jiraSet, cyberPortSet, jiraKeyToVulns);
+    log.info("Total issues to transition: {}", resolvedJiraKeySet.size());
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+    int successCount = 0;
+    int failureCount = 0;
 
-public class JiraIssueCreator {
-    private static final String JIRA_URL = "https://your-domain.atlassian.net/rest/api/3/search";
-    private static final String JIRA_BULK_URL = "https://your-domain.atlassian.net/rest/api/3/issue/bulk";
-    private static final String AUTH_HEADER = "Basic YOUR_ENCODED_TOKEN"; // base64(email:API_Token)
+    for (String jiraId : resolvedJiraKeySet) {
+        boolean success = false;
+        int retries = 3;
 
-    private static final int MAX_ISSUES = 50;
-    private static final int MAX_SIZE = 1000000; // 1 MB
+        while (!success && retries > 0) {
+            try {
+                Map<String, Object> transitionMap = Map.of(
+                        "transition", Map.of("id", transitionId)
+                );
+                String jsonBody = objectMapper.writeValueAsString(transitionMap);
+                String url = jiraBaseUrl + "/issue/" + jiraId + "/transitions";
 
-    private final ObjectMapper mapper = new ObjectMapper();
-    private final OkHttpClient client = new OkHttpClient();
+                Request request = new Request.Builder()
+                        .url(url)
+                        .addHeader("Authorization", "Bearer " + jiraPAT)
+                        .addHeader("Content-Type", "application/json")
+                        .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
+                        .build();
 
-    public void processIssues(List<CyberportIssue> issues) throws Exception {
-        List<ObjectNode> bulkList = new ArrayList<>();
-        int currentSize = 0;
+                try (Response response = okHttpClient.newCall(request).execute()) {
+                    if (response.isSuccessful()) {
+                        log.info("✅ Jira ID {} transitioned to Done", jiraId);
+                        success = true;
+                        successCount++;
+                    } else if (response.code() == 429) {
+                        String retryAfter = response.header("Retry-After");
+                        int waitTime = 5;
 
-        for (CyberportIssue issue : issues) {
-            if (vulnExistsInJira(issue.getVulnId())) {
-                System.out.println("Skipping existing VulnID: " + issue.getVulnId());
-                continue;
+                        if (retryAfter != null) {
+                            try {
+                                waitTime = Integer.parseInt(retryAfter) + 1;
+                            } catch (NumberFormatException e) {
+                                log.warn("Invalid Retry-After header for {}: {}", jiraId, retryAfter);
+                            }
+                        }
+
+                        log.warn("Rate limited. Retrying Jira ID {} after {} seconds", jiraId, waitTime);
+                        Thread.sleep(waitTime * 1000L);
+                        continue; // retry without decrementing retries
+                    } else {
+                        String responseBody = response.body() != null ? response.body().string() : "No response body";
+                        log.error("❌ Failed to transition Jira ID {}. Code: {}, Response: {}",
+                                jiraId, response.code(), responseBody);
+                        retries--;
+                    }
+                }
+
+                Thread.sleep(500); // small delay between each transition
+
+            } catch (Exception e) {
+                retries--;
+                log.error("Exception while transitioning Jira ID {}: {}", jiraId, e.getMessage(), e);
             }
-
-            ObjectNode payload = createJiraPayload(issue);
-            int size = mapper.writeValueAsBytes(payload).length;
-
-            if (bulkList.size() >= MAX_ISSUES || (currentSize + size) > MAX_SIZE) {
-                sendBulkRequest(bulkList);
-                bulkList.clear();
-                currentSize = 0;
-            }
-
-            bulkList.add(payload);
-            currentSize += size;
         }
 
-        if (!bulkList.isEmpty()) {
-            sendBulkRequest(bulkList);
+        if (!success) {
+            log.error("❌ Failed to transition Jira ID {} after 3 attempts", jiraId);
+            failureCount++;
         }
     }
 
-    private boolean vulnExistsInJira(String vulnId) throws Exception {
-        String jql = "summary ~ \"Vuln ID: " + vulnId + "\"";
-        String encodedJql = URLEncoder.encode(jql, StandardCharsets.UTF_8);
-        HttpUrl url = HttpUrl.parse(JIRA_URL).newBuilder()
-                .addQueryParameter("jql", encodedJql)
-                .build();
-
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", AUTH_HEADER)
-                .addHeader("Accept", "application/json")
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            String responseBody = response.body().string();
-            return responseBody.contains("\"total\":") && !responseBody.contains("\"total\":0");
-        }
-    }
-
-    private ObjectNode createJiraPayload(CyberportIssue issue) {
-        ObjectNode fields = mapper.createObjectNode();
-        fields.putObject("project").put("key", "PROJ");
-        fields.put("summary", "Vuln ID: " + issue.getVulnId() + " |" + issue.getHostname() + " |" + issue.getCve());
-        fields.put("description", "Auto-generated from CyberportIssue. Please update as needed.");
-        fields.putObject("issuetype").put("name", "Task");
-
-        ObjectNode issueNode = mapper.createObjectNode();
-        issueNode.set("fields", fields);
-        return issueNode;
-    }
-
-    private void sendBulkRequest(List<ObjectNode> issues) throws Exception {
-        ObjectNode body = mapper.createObjectNode();
-        body.set("issueUpdates", mapper.valueToTree(issues));
-
-        Request request = new Request.Builder()
-                .url(JIRA_BULK_URL)
-                .addHeader("Authorization", AUTH_HEADER)
-                .addHeader("Content-Type", "application/json")
-                .post(RequestBody.create(
-                        mapper.writeValueAsBytes(body),
-                        MediaType.parse("application/json")
-                ))
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            String responseBody = response.body().string();
-            System.out.println("Jira response: " + responseBody);
-        }
-    }
+    log.info("✅ Transition complete. Success: {}, Failed: {}", successCount, failureCount);
 }
