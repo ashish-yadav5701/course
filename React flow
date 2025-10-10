@@ -1,17 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import worldGeoJson from "@geojson-world/world";
-import presenceData from "./data/presence.json";
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
+import worldGeoJson from 'geojson-world-map';
+import presenceData from './data/presence.json';
+import 'leaflet/dist/leaflet.css';
 
 const WorldPresenceMap = () => {
   const [geoJsonData, setGeoJsonData] = useState(null);
 
   useEffect(() => {
-    // Merge presence info with GeoJSON
-    const updatedFeatures = worldGeoJson.features.map(feature => {
+    const updatedFeatures = worldGeoJson.features.map((feature) => {
       const country = presenceData.find(
-        c => c.code === feature.id || c.code === feature.properties.ISO_A3
+        (c) => c.code === feature.id || c.code === feature.properties.ISO_A3
       );
       feature.properties.presence = country ? true : false;
       feature.properties.services = country ? country.services : [];
@@ -20,18 +19,16 @@ const WorldPresenceMap = () => {
     setGeoJsonData({ ...worldGeoJson, features: updatedFeatures });
   }, []);
 
-  // Style countries
-  const countryStyle = feature => ({
-    fillColor: feature.properties.presence ? "#e63946" : "#e0e0e0",
+  const countryStyle = (feature) => ({
+    fillColor: feature.properties.presence ? '#e63946' : '#e0e0e0',
     weight: 1,
-    color: "#555",
+    color: '#555',
     fillOpacity: 0.7,
   });
 
-  // Tooltip for each country
   const onEachCountry = (feature, layer) => {
     if (feature.properties.presence) {
-      const services = feature.properties.services.join(", ");
+      const services = feature.properties.services.join(', ');
       layer.bindTooltip(
         `<strong>${feature.properties.name}</strong><br/>Services: ${services}`,
         { sticky: true }
@@ -43,14 +40,11 @@ const WorldPresenceMap = () => {
     <MapContainer
       center={[20, 0]}
       zoom={2}
-      style={{ height: "600px", width: "100%" }}
+      style={{ height: '600px', width: '100%' }}
       scrollWheelZoom={true}
       className="leaflet-container"
     >
-      {/* Minimal plain tile layer */}
       <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
-
-      {/* Countries */}
       {geoJsonData && (
         <GeoJSON
           data={geoJsonData}
@@ -63,3 +57,10 @@ const WorldPresenceMap = () => {
 };
 
 export default WorldPresenceMap;
+
+
+[
+  { "country": "United States", "code": "USA", "services": ["Cloud Hosting", "AI"] },
+  { "country": "India", "code": "IND", "services": ["Software Dev", "Consulting"] },
+  { "country": "Germany", "code": "DEU", "services": ["Cybersecurity", "DevOps"] }
+]
