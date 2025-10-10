@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
-import worldGeoJson from 'geojson-world-map';
-import presenceData from './data/presence.json';
+import { MapContainer, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import worldGeoJson from 'geojson-world-map'; // or your own GeoJSON
+import presenceData from './data/presence.json';
 
-const WorldPresenceMap = () => {
+const PlainWorldMap = () => {
   const [geoJsonData, setGeoJsonData] = useState(null);
 
   useEffect(() => {
+    // Merge presence info with GeoJSON
     const updatedFeatures = worldGeoJson.features.map((feature) => {
       const country = presenceData.find(
         (c) => c.code === feature.id || c.code === feature.properties.ISO_A3
@@ -19,15 +20,17 @@ const WorldPresenceMap = () => {
     setGeoJsonData({ ...worldGeoJson, features: updatedFeatures });
   }, []);
 
+  // Style countries
   const countryStyle = (feature) => ({
-    fillColor: feature.properties.presence ? '#e63946' : '#e0e0e0',
+    fillColor: feature.properties.presence ? '#e63946' : '#ffffff',
     weight: 1,
     color: '#555',
     fillOpacity: 0.7,
   });
 
+  // Bind tooltip for each country
   const onEachCountry = (feature, layer) => {
-    if (feature.properties.presence) {
+    if (feature.properties.presence && feature.properties.services) {
       const services = feature.properties.services.join(', ');
       layer.bindTooltip(
         `<strong>${feature.properties.name}</strong><br/>Services: ${services}`,
@@ -37,30 +40,29 @@ const WorldPresenceMap = () => {
   };
 
   return (
-    <MapContainer
-      center={[20, 0]}
-      zoom={2}
-      style={{ height: '600px', width: '100%' }}
-      scrollWheelZoom={true}
-      className="leaflet-container"
-    >
-      <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
-      {geoJsonData && (
-        <GeoJSON
-          data={geoJsonData}
-          style={countryStyle}
-          onEachFeature={onEachCountry}
-        />
-      )}
-    </MapContainer>
+    <div style={{ height: '600px', width: '100%', backgroundColor: '#ffffff' }}>
+      <MapContainer
+        center={[20, 0]}
+        zoom={2}
+        style={{ height: '100%', width: '100%' }}
+        scrollWheelZoom={true}
+        minZoom={2} // prevent zooming out too far
+        maxBounds={[
+          [-90, -180],
+          [90, 180],
+        ]}
+        maxBoundsViscosity={1.0}
+      >
+        {geoJsonData && (
+          <GeoJSON
+            data={geoJsonData}
+            style={countryStyle}
+            onEachFeature={onEachCountry}
+          />
+        )}
+      </MapContainer>
+    </div>
   );
 };
 
-export default WorldPresenceMap;
-
-
-[
-  { "country": "United States", "code": "USA", "services": ["Cloud Hosting", "AI"] },
-  { "country": "India", "code": "IND", "services": ["Software Dev", "Consulting"] },
-  { "country": "Germany", "code": "DEU", "services": ["Cybersecurity", "DevOps"] }
-]
+export default PlainWorldMap;
