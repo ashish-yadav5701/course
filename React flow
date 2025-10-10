@@ -1,233 +1,65 @@
-""" FastAPI MVP: Vertex AI (embeddings + LLM) + Chroma Vector DB + Confluence
-
-Files in this single-file MVP:
-
-fastapi app with endpoints:
-
-POST /sync        -> fetch pages from Confluence and upsert into Chroma (embeds via Vertex AI)
-
-POST /query       -> semantic search in Chroma and answer generation via Vertex AI
-
-
-
-Environment variables required:
-
-CONFLUENCE_BASE_URL   (e.g. https://your-company.atlassian.net/wiki)
-
-CONFLUENCE_USER       (email or username for API auth)
-
-CONFLUENCE_API_TOKEN  (API token/password)
-
-GOOGLE_PROJECT_ID     (GCP project id)
-
-GOOGLE_LOCATION       (e.g. us-central1)
-
-GOOGLE_APPLICATION_CREDENTIALS (path to service account JSON) OR use default ADC
-
-CHROMA_PERSIST_DIRECTORY (optional; default: ./chroma_db)
-
-
-Requirements (requirements.txt): fastapi uvicorn[standard] httpx chromadb google-cloud-aiplatform pydantic python-multipart """
-
-from fastapi import FastAPI, HTTPException from pydantic import BaseModel import os import httpx import chromadb from chromadb.utils import embedding_functions from typing import List, Optional import uuid import math import asyncio
-
-Vertex AI imports
-
-from google.cloud import aiplatform
-
------------------
-
-Config & init
-
------------------
-
-CONFLUENCE_BASE_URL = os.getenv("CONFLUENCE_BASE_URL") CONFLUENCE_USER = os.getenv("CONFLUENCE_USER") CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN") GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID") GOOGLE_LOCATION = os.getenv("GOOGLE_LOCATION", "us-central1") CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
-
-if not GOOGLE_PROJECT_ID: raise RuntimeError("Set GOOGLE_PROJECT_ID environment variable")
-
-Initialize Vertex AI
-
-aiplatform.init(project=GOOGLE_PROJECT_ID, location=GOOGLE_LOCATION)
-
-Embedding model and text generation model (Vertex AI)
-
-EMBEDDING_MODEL_NAME = "textembedding-gecko" LLM_MODEL_NAME = "text-bison"
-
-embedding_model = aiplatform.TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL_NAME) llm_model = aiplatform.TextGenerationModel.from_pretrained(LLM_MODEL_NAME)
-
-Initialize Chroma client
-
-Uses default local persistent directory. For a separate Chroma server, configure accordingly.
-
-chroma_client = chromadb.Client() collection_name = "confluence_docs" try: collection = chroma_client.get_collection(collection_name) except Exception: collection = chroma_client.create_collection(collection_name)
-
------------------
-
-Helpers
-
------------------
-
-def fetch_confluence_page(page_id: str) -> dict: """Fetch a single Confluence page content using REST API (expand storage to get HTML).""" if not CONFLUENCE_BASE_URL or not CONFLUENCE_USER or not CONFLUENCE_API_TOKEN: raise RuntimeError("Confluence environment variables not set")
-
-url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}?expand=body.storage,version,space,ancestors"
-auth = (CONFLUENCE_USER, CONFLUENCE_API_TOKEN)
-r = httpx.get(url, auth=auth, timeout=30.0)
-if r.status_code != 200:
-    raise HTTPException(status_code=500, detail=f"Confluence fetch failed: {r.status_code} {r.text}")
-return r.json()
-
-def fetch_confluence_space_pages(space_key: str, limit: int = 50) -> List[dict]: """List pages from a Confluence space (paginated) - returns list of page JSONs (storage format).""" if not CONFLUENCE_BASE_URL or not CONFLUENCE_USER or not CONFLUENCE_API_TOKEN: raise RuntimeError("Confluence environment variables not set")
-
-auth = (CONFLUENCE_USER, CONFLUENCE_API_TOKEN)
-start = 0
-results = []
-while True:
-    url = f"{CONFLUENCE_BASE_URL}/rest/api/content?spaceKey={space_key}&limit=50&start={start}&expand=body.storage,version,space,ancestors"
-    r = httpx.get(url, auth=auth, timeout=30.0)
-    if r.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Confluence list failed: {r.status_code} {r.text}")
-    js = r.json()
-    page_results = js.get("results", [])
-    results.extend(page_results)
-    if not js.get("_links") or not js.get("_links").get("next"):
-        break
-    start += len(page_results)
-    if len(results) >= limit:
-        break
-return results
-
-def html_to_text(html: str) -> str: """Simple HTML -> plain text. For MVP we strip tags. For production use a robust parser like BeautifulSoup.""" # naive strip: remove tags import re text = re.sub(r"<[^>]+>", "", html) # collapse whitespace text = re.sub(r"\s+", " ", text).strip() return text
-
-def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> List[str]: """Chunk text into pieces of up to chunk_size characters with overlap.""" if len(text) <= chunk_size: return [text] chunks = [] start = 0 while start < len(text): end = start + chunk_size chunk = text[start:end] chunks.append(chunk) start = end - overlap if len(chunks) > 1000: break return chunks
-
-def embed_texts(texts: List[str]) -> List[List[float]]: """Call Vertex AI embedding model for a list of texts.""" # Vertex AI SDK returns an object with .values per embedding resp = embedding_model.get_embeddings(texts) embeddings = [e.values for e in resp] return embeddings
-
------------------
-
-FastAPI app
-
------------------
-
-app = FastAPI(title="VertexAI + Chroma Confluence MVP")
-
-class SyncRequest(BaseModel): space_key: Optional[str] = None page_ids: Optional[List[str]] = None
-
-class QueryRequest(BaseModel): query: str top_k: Optional[int] = 5
-
-@app.post("/sync") async def sync_confluence(req: SyncRequest): """Sync either a space (space_key) or list of page_ids. Extract text, chunk, embed, and upsert to Chroma.""" pages = [] if req.space_key: pages = fetch_confluence_space_pages(req.space_key) elif req.page_ids: for pid in req.page_ids: pages.append(fetch_confluence_page(pid)) else: raise HTTPException(status_code=400, detail="Provide space_key or page_ids")
-
-to_add_embeddings = []
-to_add_docs = []
-to_add_metadatas = []
-to_add_ids = []
-
-for p in pages:
-    page_id = p.get("id")
-    title = p.get("title")
-    space = p.get("space", {}).get("key")
-    url = f"{CONFLUENCE_BASE_URL}/pages/{page_id}"
-    storage_value = p.get("body", {}).get("storage", {}).get("value", "")
-    text = html_to_text(storage_value)
-    chunks = chunk_text(text)
-    embeddings = embed_texts(chunks)
-    for i, chunk in enumerate(chunks):
-        uid = f"{page_id}_{i}_{uuid.uuid4().hex[:6]}"
-        to_add_ids.append(uid)
-        to_add_docs.append(chunk)
-        to_add_embeddings.append(embeddings[i])
-        to_add_metadatas.append({"page_id": page_id, "title": title, "space": space, "url": url})
-
-# Upsert into chroma (add or update). Chroma collection.add will error on duplicate ids, so we use upsert if available.
-try:
-    # create collection if missing
-    if not chroma_client.get_collection(collection_name):
-        chroma_client.create_collection(collection_name)
-except Exception:
-    pass
-
-# Some chroma client versions have .upsert; fallback to .add after deleting duplicates.
-existing_ids = []
-try:
-    existing_ids = collection.get(ids=[_ for _ in to_add_ids]).get("ids", [])
-except Exception:
-    existing_ids = []
-
-# delete existing if any (safe approach for MVP)
-if existing_ids:
-    try:
-        collection.delete(ids=existing_ids)
-    except Exception:
-        pass
-
-collection.add(
-    ids=to_add_ids,
-    documents=to_add_docs,
-    embeddings=to_add_embeddings,
-    metadatas=to_add_metadatas,
-)
-
-return {"status": "ok", "added": len(to_add_ids)}
-
-@app.post("/query") async def query_qa(req: QueryRequest): """Embed the query, search Chroma, and generate an answer with Vertex AI LLM using retrieved context.""" if not req.query: raise HTTPException(status_code=400, detail="query required")
-
-# 1) Embed the query
-q_embedding = embed_texts([req.query])[0]
-
-# 2) Query Chroma
-try:
-    res = collection.query(query_embeddings=[q_embedding], n_results=req.top_k, include=['documents','metadatas','distances'])
-except Exception as e:
-    raise HTTPException(status_code=500, detail=f"Chroma query failed: {e}")
-
-documents = res.get('documents', [[]])[0]
-metadatas = res.get('metadatas', [[]])[0]
-distances = res.get('distances', [[]])[0]
-
-# 3) Build context (concatenate top-k docs; respect a max token/char budget)
-combined_context = "\n\n---\n\n".join(documents)
-# Truncate context if too long (simple char-based truncation)
-max_context_chars = 4000
-if len(combined_context) > max_context_chars:
-    combined_context = combined_context[:max_context_chars]
-
-prompt = (
-    "You are an assistant that answers user questions using only the provided Confluence context. "
-    "If the answer is not contained in the context, say 'I don't know based on the provided documents.'\n\n"
-    f"Context:\n{combined_context}\n\nQuestion: {req.query}\n\nAnswer:"
-)
-
-# 4) Call Vertex AI LLM
-# Note: TextGenerationModel.predict returns a response with .text
-try:
-    response = llm_model.predict(prompt, max_output_tokens=512)
-    answer_text = response.text
-except Exception as e:
-    raise HTTPException(status_code=500, detail=f"Vertex AI generation failed: {e}")
-
-# 5) Return answer + sources
-sources = []
-for md, d, dist in zip(metadatas, documents, distances):
-    sources.append({
-        "title": md.get('title'),
-        "page_id": md.get('page_id'),
-        "url": md.get('url'),
-        "excerpt": d[:300],
-        "distance": dist
-    })
-
-return {"answer": answer_text, "sources": sources}
-
------------------
-
-Run with: uvicorn fastapi:app --reload
-
-Example sync:
-
-POST /sync { "space_key": "PROJ" }
-
-Example query:
-
-POST /query { "query": "How to set up CI?", "top_k": 5 }
-
------------------
-
+import React, { useEffect, useState } from "react";
+import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import worldGeoJson from "@geojson-world/world";
+import presenceData from "./data/presence.json";
+
+const WorldPresenceMap = () => {
+  const [geoJsonData, setGeoJsonData] = useState(null);
+
+  useEffect(() => {
+    // Merge presence info with GeoJSON
+    const updatedFeatures = worldGeoJson.features.map(feature => {
+      const country = presenceData.find(
+        c => c.code === feature.id || c.code === feature.properties.ISO_A3
+      );
+      feature.properties.presence = country ? true : false;
+      feature.properties.services = country ? country.services : [];
+      return feature;
+    });
+    setGeoJsonData({ ...worldGeoJson, features: updatedFeatures });
+  }, []);
+
+  // Style countries
+  const countryStyle = feature => ({
+    fillColor: feature.properties.presence ? "#e63946" : "#e0e0e0",
+    weight: 1,
+    color: "#555",
+    fillOpacity: 0.7,
+  });
+
+  // Tooltip for each country
+  const onEachCountry = (feature, layer) => {
+    if (feature.properties.presence) {
+      const services = feature.properties.services.join(", ");
+      layer.bindTooltip(
+        `<strong>${feature.properties.name}</strong><br/>Services: ${services}`,
+        { sticky: true }
+      );
+    }
+  };
+
+  return (
+    <MapContainer
+      center={[20, 0]}
+      zoom={2}
+      style={{ height: "600px", width: "100%" }}
+      scrollWheelZoom={true}
+      className="leaflet-container"
+    >
+      {/* Minimal plain tile layer */}
+      <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
+
+      {/* Countries */}
+      {geoJsonData && (
+        <GeoJSON
+          data={geoJsonData}
+          style={countryStyle}
+          onEachFeature={onEachCountry}
+        />
+      )}
+    </MapContainer>
+  );
+};
+
+export default WorldPresenceMap;
