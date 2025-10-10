@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, GeoJSON } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import worldGeoJson from 'geojson-world-map'; // or your own GeoJSON
-import presenceData from './data/presence.json';
+import React, { useEffect, useState } from "react";
+import { MapContainer, GeoJSON } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import worldGeoJson from "geojson-world-map"; // Or your own GeoJSON
+import presenceData from "./data/presence.json";
 
 const PlainWorldMap = () => {
   const [geoJsonData, setGeoJsonData] = useState(null);
 
   useEffect(() => {
-    // Merge presence info with GeoJSON
+    // Map presence info to GeoJSON features
     const updatedFeatures = worldGeoJson.features.map((feature) => {
+      // Match by ISO_A3 code
       const country = presenceData.find(
-        (c) => c.code === feature.id || c.code === feature.properties.ISO_A3
+        (c) => c.code === feature.properties.ISO_A3
       );
       feature.properties.presence = country ? true : false;
       feature.properties.services = country ? country.services : [];
@@ -22,31 +23,36 @@ const PlainWorldMap = () => {
 
   // Style countries
   const countryStyle = (feature) => ({
-    fillColor: feature.properties.presence ? '#e63946' : '#ffffff',
+    fillColor: feature.properties.presence ? "#e63946" : "#ffffff",
     weight: 1,
-    color: '#555',
-    fillOpacity: 0.7,
+    color: "#555",
+    fillOpacity: 0.8,
   });
 
-  // Bind tooltip for each country
+  // Add tooltip for countries with presence
   const onEachCountry = (feature, layer) => {
-    if (feature.properties.presence && feature.properties.services) {
-      const services = feature.properties.services.join(', ');
+    if (feature.properties.presence && feature.properties.services.length) {
+      const services = feature.properties.services.join(", ");
       layer.bindTooltip(
-        `<strong>${feature.properties.name}</strong><br/>Services: ${services}`,
-        { sticky: true }
+        `<strong>${feature.properties.ADMIN}</strong><br/>Services: ${services}`,
+        { sticky: true, direction: "auto" }
+      );
+      // Optional: change cursor on hover
+      layer.on("mouseover", () => layer.setStyle({ fillOpacity: 1 }));
+      layer.on("mouseout", () =>
+        layer.setStyle({ fillOpacity: feature.properties.presence ? 0.8 : 0.8 })
       );
     }
   };
 
   return (
-    <div style={{ height: '600px', width: '100%', backgroundColor: '#ffffff' }}>
+    <div style={{ height: "600px", width: "100%", backgroundColor: "#ffffff" }}>
       <MapContainer
         center={[20, 0]}
         zoom={2}
-        style={{ height: '100%', width: '100%' }}
+        style={{ height: "100%", width: "100%" }}
         scrollWheelZoom={true}
-        minZoom={2} // prevent zooming out too far
+        minZoom={2}
         maxBounds={[
           [-90, -180],
           [90, 180],
