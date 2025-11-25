@@ -1,74 +1,109 @@
-import React, { useEffect, useState } from "react";
-import { MapContainer, GeoJSON } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import worldGeoJson from "geojson-world-map"; // Or your own GeoJSON
-import presenceData from "./data/presence.json";
+<svg id="chat-bot-sprite"
+     width="80" height="80"
+     viewBox="0 0 80 80"
+     xmlns="http://www.w3.org/2000/svg">
 
-const PlainWorldMap = () => {
-  const [geoJsonData, setGeoJsonData] = useState(null);
+  <!-- Common defs -->
+  <defs>
+    <style>
+      .bot-body { fill:#ffffff; stroke:#00b4ff; stroke-width:2; }
+      .bot-accent { fill:#00b4ff; }
+      .bot-eye { fill:#00b4ff; }
+      .bot-outline { stroke:#00b4ff; stroke-width:2; fill:none; }
+    </style>
+  </defs>
 
-  useEffect(() => {
-    // Map presence info to GeoJSON features
-    const updatedFeatures = worldGeoJson.features.map((feature) => {
-      // Match by ISO_A3 code
-      const country = presenceData.find(
-        (c) => c.code === feature.properties.ISO_A3
-      );
-      feature.properties.presence = country ? true : false;
-      feature.properties.services = country ? country.services : [];
-      return feature;
-    });
-    setGeoJsonData({ ...worldGeoJson, features: updatedFeatures });
-  }, []);
+  <!-- SITTING (front, default) -->
+  <g id="bot-sit">
+    <!-- head -->
+    <rect x="24" y="8" rx="6" ry="6" width="32" height="22" class="bot-body"/>
+    <circle cx="34" cy="19" r="3" class="bot-eye"/>
+    <circle cx="46" cy="19" r="3" class="bot-eye"/>
+    <path d="M32 24 Q40 28 48 24" class="bot-outline"/>
+    <!-- antenna -->
+    <line x1="40" y1="8" x2="40" y2="3" class="bot-outline"/>
+    <circle cx="40" cy="2" r="2" class="bot-accent"/>
 
-  // Style countries
-  const countryStyle = (feature) => ({
-    fillColor: feature.properties.presence ? "#e63946" : "#ffffff",
-    weight: 1,
-    color: "#555",
-    fillOpacity: 0.8,
-  });
+    <!-- torso -->
+    <rect x="28" y="32" rx="6" ry="6" width="24" height="20" class="bot-body"/>
+    <rect x="33" y="36" width="14" height="9" rx="3" ry="3" class="bot-accent"/>
 
-  // Add tooltip for countries with presence
-  const onEachCountry = (feature, layer) => {
-    if (feature.properties.presence && feature.properties.services.length) {
-      const services = feature.properties.services.join(", ");
-      layer.bindTooltip(
-        `<strong>${feature.properties.ADMIN}</strong><br/>Services: ${services}`,
-        { sticky: true, direction: "auto" }
-      );
-      // Optional: change cursor on hover
-      layer.on("mouseover", () => layer.setStyle({ fillOpacity: 1 }));
-      layer.on("mouseout", () =>
-        layer.setStyle({ fillOpacity: feature.properties.presence ? 0.8 : 0.8 })
-      );
-    }
-  };
+    <!-- arms resting on "table" -->
+    <rect x="19" y="34" width="6" height="16" rx="3" ry="3" class="bot-body"/>
+    <rect x="55" y="34" width="6" height="16" rx="3" ry="3" class="bot-body"/>
 
-  return (
-    <div style={{ height: "600px", width: "100%", backgroundColor: "#ffffff" }}>
-      <MapContainer
-        center={[20, 0]}
-        zoom={2}
-        style={{ height: "100%", width: "100%" }}
-        scrollWheelZoom={true}
-        minZoom={2}
-        maxBounds={[
-          [-90, -180],
-          [90, 180],
-        ]}
-        maxBoundsViscosity={1.0}
-      >
-        {geoJsonData && (
-          <GeoJSON
-            data={geoJsonData}
-            style={countryStyle}
-            onEachFeature={onEachCountry}
-          />
-        )}
-      </MapContainer>
-    </div>
-  );
-};
+    <!-- seat -->
+    <rect x="24" y="54" width="32" height="6" rx="3" ry="3" class="bot-accent"/>
 
-export default PlainWorldMap;
+    <!-- legs folded -->
+    <rect x="28" y="60" width="8" height="8" rx="2" ry="2" class="bot-body"/>
+    <rect x="44" y="60" width="8" height="8" rx="2" ry="2" class="bot-body"/>
+  </g>
+
+  <!-- FRONT STANDING -->
+  <g id="bot-front" style="display:none">
+    <!-- head -->
+    <rect x="24" y="6" rx="6" ry="6" width="32" height="22" class="bot-body"/>
+    <circle cx="34" cy="17" r="3" class="bot-eye"/>
+    <circle cx="46" cy="17" r="3" class="bot-eye"/>
+    <path d="M32 22 Q40 26 48 22" class="bot-outline"/>
+    <line x1="40" y1="6" x2="40" y2="1" class="bot-outline"/>
+    <circle cx="40" cy="0" r="2" class="bot-accent"/>
+
+    <!-- torso -->
+    <rect x="28" y="30" rx="6" ry="6" width="24" height="20" class="bot-body"/>
+    <rect x="33" y="34" width="14" height="9" rx="3" ry="3" class="bot-accent"/>
+
+    <!-- arms down -->
+    <rect x="19" y="30" width="6" height="20" rx="3" ry="3" class="bot-body"/>
+    <rect x="55" y="30" width="6" height="20" rx="3" ry="3" class="bot-body"/>
+
+    <!-- legs straight -->
+    <rect x="30" y="52" width="6" height="14" rx="2" ry="2" class="bot-body"/>
+    <rect x="44" y="52" width="6" height="14" rx="2" ry="2" class="bot-body"/>
+  </g>
+
+  <!-- SIDE WALK – frame 1 (facing right) -->
+  <g id="bot-side-step1" style="display:none">
+    <!-- head -->
+    <rect x="28" y="6" rx="6" ry="6" width="26" height="22" class="bot-body"/>
+    <!-- visor -->
+    <rect x="32" y="11" width="18" height="10" rx="4" ry="4" class="bot-accent"/>
+    <circle cx="38" cy="16" r="2" fill="#ffffff"/>
+    <circle cx="43" cy="16" r="2" fill="#ffffff"/>
+
+    <!-- torso -->
+    <rect x="30" y="29" rx="6" ry="6" width="22" height="18" class="bot-body"/>
+    <circle cx="41" cy="38" r="4" class="bot-accent"/>
+
+    <!-- front arm forward -->
+    <rect x="26" y="30" width="5" height="16" rx="2" ry="2" class="bot-body"/>
+    <!-- back arm slightly back -->
+    <rect x="54" y="32" width="4" height="14" rx="2" ry="2" class="bot-body"/>
+
+    <!-- legs – one forward, one back -->
+    <rect x="32" y="50" width="5" height="15" rx="2" ry="2" class="bot-body"/>
+    <rect x="42" y="50" width="5" height="11" rx="2" ry="2" class="bot-body"/>
+  </g>
+
+  <!-- SIDE WALK – frame 2 (opposite legs) -->
+  <g id="bot-side-step2" style="display:none">
+    <!-- head -->
+    <rect x="28" y="6" rx="6" ry="6" width="26" height="22" class="bot-body"/>
+    <rect x="32" y="11" width="18" height="10" rx="4" ry="4" class="bot-accent"/>
+    <circle cx="38" cy="16" r="2" fill="#ffffff"/>
+    <circle cx="43" cy="16" r="2" fill="#ffffff"/>
+
+    <!-- torso -->
+    <rect x="30" y="29" rx="6" ry="6" width="22" height="18" class="bot-body"/>
+    <circle cx="41" cy="38" r="4" class="bot-accent"/>
+
+    <!-- swap arm positions -->
+    <rect x="26" y="32" width="5" height="14" rx="2" ry="2" class="bot-body"/>
+    <rect x="54" y="30" width="4" height="16" rx="2" ry="2" class="bot-body"/>
+
+    <!-- swap legs -->
+    <rect x="32" y="50" width="5" height="11" rx="2" ry="2" class="bot-body"/>
+    <rect x="42" y="50" width="5" height="15" rx="2" ry="2" class="bot-body"/>
+  </g>
+</svg>
