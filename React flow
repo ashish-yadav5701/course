@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-const frames = [
+// Sitting frame + walking frames
+const sittingFrame = "/assets/bot/sit.png";
+const walkingFrames = [
   "/assets/bot/walk1.png",
   "/assets/bot/walk2.png",
   "/assets/bot/walk3.png",
@@ -10,66 +12,81 @@ const frames = [
 
 export default function WalkingBot() {
   const botRef = useRef(null);
+
+  // Walking state
   const [walking, setWalking] = useState(false);
+
+  // Which frame to show (walking only)
   const [frameIndex, setFrameIndex] = useState(0);
 
-  // ---------- INACTIVITY DETECTION ----------
+  // Current direction
+  const [direction, setDirection] = useState("right");
+
+  // ---------------- INACTIVITY LOGIC ----------------
   useEffect(() => {
     let timer;
 
-    const startTimer = () => {
+    const resetTimer = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => setWalking(true), 10000); // 10 sec
+      setWalking(false); // user is active → sit
+      if (botRef.current) {
+        botRef.current.style.transform = "translateX(0px) scaleX(1)";
+      }
+      timer = setTimeout(() => setWalking(true), 10000); // start walking after 10s
     };
 
-    startTimer();
+    resetTimer();
 
     const events = ["mousemove", "keydown", "click", "touchstart"];
-
-    events.forEach((ev) => window.addEventListener(ev, () => {
-      setWalking(false);
-      startTimer();
-    }));
+    events.forEach(ev =>
+      window.addEventListener(ev, resetTimer)
+    );
 
     return () => {
-      events.forEach((ev) => window.removeEventListener(ev, startTimer));
+      events.forEach(ev =>
+        window.removeEventListener(ev, resetTimer)
+      );
       clearTimeout(timer);
     };
   }, []);
 
-  // ---------- FRAME ANIMATION ----------
+  // ---------------- WALKING FRAME ANIMATION ----------------
   useEffect(() => {
     if (!walking) return;
 
     const interval = setInterval(() => {
-      setFrameIndex((prev) => (prev + 1) % frames.length);
-    }, 120); // 5 frames × 120ms = smooth walking
+      setFrameIndex(prev => (prev + 1) % walkingFrames.length);
+    }, 120);
 
     return () => clearInterval(interval);
   }, [walking]);
 
-  // ---------- MOVE ACROSS SCREEN ----------
+  // ---------------- MOVEMENT INSIDE PARENT ----------------
   useEffect(() => {
-    if (!walking) {
-      if (botRef.current) botRef.current.style.transform = "translateX(0px)";
-      return;
-    }
+    if (!walking) return;
 
     let x = 0;
-    let speed = 1.8; // adjust speed here
-
+    const speed = 2;
     let animationId;
 
     const step = () => {
-      x += speed;
-      if (botRef.current) {
-        botRef.current.style.transform = `translateX(${x}px)`;
+      const parent = botRef.current?.parentElement;
+      if (!parent) return;
+
+      const parentWidth = parent.clientWidth;
+      const maxX = parentWidth - 20; // <-- your requirement
+
+      if (direction === "right") {
+        x += speed;
+        if (x >= maxX) setDirection("left");
+      } else {
+        x -= speed;
+        if (x <= 0) setDirection("right");
       }
 
-      // If bot reaches end of screen → reset
-      if (x > window.innerWidth + 50) {
-        x = -80;
-      }
+      // Apply movement + horizontal flip
+      botRef.current.style.transform =
+        `translateX(${x}px) scaleX(${direction === "right" ? 1 : -1})`;
 
       animationId = requestAnimationFrame(step);
     };
@@ -77,25 +94,25 @@ export default function WalkingBot() {
     animationId = requestAnimationFrame(step);
 
     return () => cancelAnimationFrame(animationId);
-  }, [walking]);
+  }, [walking, direction]);
 
   return (
     <div
       ref={botRef}
       style={{
-        position: "fixed",
-        top: "8px",
-        left: "0px",
-        width: "80px",
-        height: "80px",
-        backgroundImage: `url(${frames[frameIndex]})`,
+        width: 80,
+        height: 80,
+        position: "absolute",
+        top: 0,
+        left: 0,
+        backgroundImage: walking
+          ? `url(${walkingFrames[frameIndex]})`
+          : `url(${sittingFrame})`,
         backgroundSize: "contain",
         backgroundRepeat: "no-repeat",
         pointerEvents: "none",
-        zIndex: 99999,
-        opacity: walking ? 1 : 0, // hide when idle sitting
         transition: "opacity 0.3s ease",
       }}
-    ></div>
+    />
   );
 }
