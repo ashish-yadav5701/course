@@ -1,118 +1,82 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useState, useEffect } from "react";
+import { setupFetchInterceptor } from "./fetchInterceptor";
 
-// Sitting frame + walking frames
-const sittingFrame = "/assets/bot/sit.png";
-const walkingFrames = [
-  "/assets/bot/walk1.png",
-  "/assets/bot/walk2.png",
-  "/assets/bot/walk3.png",
-  "/assets/bot/walk4.png",
-  "/assets/bot/walk5.png",
-];
+export const AuthContext = createContext();
 
-export default function WalkingBot() {
-  const botRef = useRef(null);
+export const AuthProvider = ({ children }) => {
+  const [jwt, setJwt] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sessionExpireAt, setSessionExpireAt] = useState(null);
 
-  // Walking state
-  const [walking, setWalking] = useState(false);
+  // Fetch AM Token
+  const getAmToken = async () => {
+    const res = await fetch("/api/sso/get-am-token");
+    const data = await res.json();
+    return data.amToken;
+  };
 
-  // Which frame to show (walking only)
-  const [frameIndex, setFrameIndex] = useState(0);
+  // Get user info using AM token
+  const getUserInfo = async (amToken) => {
+    const res = await fetch("/api/sso/user-info", {
+      headers: { Authorization: `Bearer ${amToken}` },
+    });
+    return res.json();
+  };
 
-  // Current direction
-  const [direction, setDirection] = useState("right");
+  // Convert AM token → JWT
+  const getJwt = async (amToken) => {
+    const res = await fetch("/api/sso/convert-token", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${amToken}` },
+    });
+    return res.json();
+  };
 
-  // ---------------- INACTIVITY LOGIC ----------------
+  // SESSION WATCHER
+  const startSessionWatcher = (exp) => {
+    setSessionExpireAt(exp);
+
+    const now = Date.now();
+    const expireTime = exp * 1000;
+
+    const timeout = expireTime - now - 10000; // 10 sec before expiry
+
+    setTimeout(() => {
+      alert("Your session expired. Refresh to login again.");
+      setJwt(null);
+      setUser(null);
+    }, timeout);
+  };
+
+  // MAIN SSO FLOW
+  const initLoginFlow = async () => {
+    try {
+      const amToken = await getAmToken();
+      const userInfo = await getUserInfo(amToken);
+      const jwtData = await getJwt(amToken);
+
+      setUser(userInfo);
+      setJwt(jwtData.jwt);
+
+      setupFetchInterceptor(jwtData.jwt);
+
+      startSessionWatcher(jwtData.exp);
+
+    } catch (err) {
+      console.error("SSO Login failed → ", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let timer;
-
-    const resetTimer = () => {
-      clearTimeout(timer);
-      setWalking(false); // user is active → sit
-      if (botRef.current) {
-        botRef.current.style.transform = "translateX(0px) scaleX(1)";
-      }
-      timer = setTimeout(() => setWalking(true), 10000); // start walking after 10s
-    };
-
-    resetTimer();
-
-    const events = ["mousemove", "keydown", "click", "touchstart"];
-    events.forEach(ev =>
-      window.addEventListener(ev, resetTimer)
-    );
-
-    return () => {
-      events.forEach(ev =>
-        window.removeEventListener(ev, resetTimer)
-      );
-      clearTimeout(timer);
-    };
+    initLoginFlow();
   }, []);
 
-  // ---------------- WALKING FRAME ANIMATION ----------------
-  useEffect(() => {
-    if (!walking) return;
-
-    const interval = setInterval(() => {
-      setFrameIndex(prev => (prev + 1) % walkingFrames.length);
-    }, 120);
-
-    return () => clearInterval(interval);
-  }, [walking]);
-
-  // ---------------- MOVEMENT INSIDE PARENT ----------------
-  useEffect(() => {
-    if (!walking) return;
-
-    let x = 0;
-    const speed = 2;
-    let animationId;
-
-    const step = () => {
-      const parent = botRef.current?.parentElement;
-      if (!parent) return;
-
-      const parentWidth = parent.clientWidth;
-      const maxX = parentWidth - 20; // <-- your requirement
-
-      if (direction === "right") {
-        x += speed;
-        if (x >= maxX) setDirection("left");
-      } else {
-        x -= speed;
-        if (x <= 0) setDirection("right");
-      }
-
-      // Apply movement + horizontal flip
-      botRef.current.style.transform =
-        `translateX(${x}px) scaleX(${direction === "right" ? 1 : -1})`;
-
-      animationId = requestAnimationFrame(step);
-    };
-
-    animationId = requestAnimationFrame(step);
-
-    return () => cancelAnimationFrame(animationId);
-  }, [walking, direction]);
-
   return (
-    <div
-      ref={botRef}
-      style={{
-        width: 80,
-        height: 80,
-        position: "absolute",
-        top: 0,
-        left: 0,
-        backgroundImage: walking
-          ? `url(${walkingFrames[frameIndex]})`
-          : `url(${sittingFrame})`,
-        backgroundSize: "contain",
-        backgroundRepeat: "no-repeat",
-        pointerEvents: "none",
-        transition: "opacity 0.3s ease",
-      }}
-    />
+    <AuthContext.Provider value={{ jwt, user, loading }}>
+      {children}
+    </AuthContext.Provider>
   );
-}
+};
