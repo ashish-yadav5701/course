@@ -7,9 +7,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.FileTime;
-import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.Comparator;
 import java.util.Optional;
 
@@ -19,68 +17,85 @@ public class SftpHealthChecker {
 
     private final Path incomingDir = Paths.get("/nas/incoming/");
     private final Path processedDir = Paths.get("/nas/processed/");
-    private static final long SLA_MINUTES = 30;
+    private static final long SLA_MINUTES = 10;
 
-    @Scheduled(fixedRate = 30 * 60 * 1000) // every 30 minutes
+    @Scheduled(fixedRate = 30 * 60 * 1000)  // runs every 30 minutes
     public void checkSftpHealth() throws IOException {
 
-        // 1️⃣ Get oldest file in incoming
+        // -----------------------------------------
+        // 1️⃣ Check oldest incoming file
+        // -----------------------------------------
         Optional<Path> oldestIncomingOpt = Files.list(incomingDir)
                 .filter(Files::isRegularFile)
                 .min(Comparator.comparingLong(p -> {
-                    try {
-                        return Files.getLastModifiedTime(p).toMillis();
-                    } catch (IOException e) {
-                        return Long.MAX_VALUE;
-                    }
+                    try { return Files.getLastModifiedTime(p).toMillis(); }
+                    catch (IOException e) { return Long.MAX_VALUE; }
                 }));
 
+        // -----------------------------------------
+        // CASE A: INCOMING EMPTY → NO ERROR
+        // -----------------------------------------
         if (oldestIncomingOpt.isEmpty()) {
-            log.info("HEALTH OK – Incoming folder empty, nothing pending.");
+            log.info("HEALTH OK – Incoming folder is empty. Nothing pending.");
             return;
         }
 
         Path oldestIncoming = oldestIncomingOpt.get();
-        LocalDateTime incomingTime = toLocal(Files.getLastModifiedTime(oldestIncoming));
+        LocalDateTime incomingTime =
+                toLocal(Files.getLastModifiedTime(oldestIncoming));
 
-        // 2️⃣ Get latest processed file
+        // -----------------------------------------
+        // 2️⃣ Check latest processed file
+        // -----------------------------------------
         Optional<Path> latestProcessedOpt = Files.list(processedDir)
                 .filter(Files::isRegularFile)
                 .max(Comparator.comparingLong(p -> {
-                    try {
-                        return Files.getLastModifiedTime(p).toMillis();
-                    } catch (IOException e) {
-                        return Long.MIN_VALUE;
-                    }
+                    try { return Files.getLastModifiedTime(p).toMillis(); }
+                    catch (IOException e) { return Long.MIN_VALUE; }
                 }));
 
+        // -----------------------------------------
+        // CASE B: PROCESSED EMPTY, INCOMING HAS FILES → CHECK SLA
+        // -----------------------------------------
         if (latestProcessedOpt.isEmpty()) {
-            log.error("❌ SFTP FAILURE – No processed files found while incoming has files. " +
-                      "Script/SFTP may not be running.");
+
+            long age = Duration.between(incomingTime, LocalDateTime.now()).toMinutes();
+
+            if (age > SLA_MINUTES) {
+                log.error("❌ SFTP FAILURE – Processed empty but incoming '{}' "
+                        + "waiting {} minutes (SLA={} mins).",
+                        oldestIncoming.getFileName(), age, SLA_MINUTES);
+            } else {
+                log.info("⏳ Within SLA – Processed empty but oldest incoming '{}' "
+                        + "is only {} minutes old.",
+                        oldestIncoming.getFileName(), age);
+            }
             return;
         }
 
+        // -----------------------------------------
+        // CASE C: BOTH FOLDERS HAVE FILES → CHECK SLA
+        // -----------------------------------------
         Path latestProcessed = latestProcessedOpt.get();
-        LocalDateTime processedTime = toLocal(Files.getLastModifiedTime(latestProcessed));
+        LocalDateTime processedTime =
+                toLocal(Files.getLastModifiedTime(latestProcessed));
 
-        // 3️⃣ Compute time lag
-        long lagMinutes = Duration.between(processedTime, incomingTime).toMinutes();
+        long lag = Duration.between(processedTime, incomingTime).toMinutes();
 
-        if (lagMinutes > SLA_MINUTES) {
-            log.error("❌ SFTP FAILURE – Pipeline stuck. " +
-                    "Oldest incoming file '{}' is {} minutes older than latest processed file '{}'. " +
-                    "This exceeds SLA of {} minutes.",
-                    oldestIncoming.getFileName(), lagMinutes,
+        if (lag > SLA_MINUTES) {
+            log.error("❌ SFTP FAILURE – Oldest incoming '{}' is {} minutes older "
+                    + "than latest processed '{}' (SLA={} mins).",
+                    oldestIncoming.getFileName(), lag,
                     latestProcessed.getFileName(), SLA_MINUTES);
         } else {
-            log.info("✔ SFTP OK – Oldest incoming lag: {} minutes (within SLA {} mins). " +
-                     "Latest processed file: {}, Oldest incoming: {}",
-                    lagMinutes, SLA_MINUTES,
+            log.info("✔ SFTP OK – Lag {} mins is within SLA {} mins. "
+                    + "Latest processed={}, Oldest incoming={}",
+                    lag, SLA_MINUTES,
                     latestProcessed.getFileName(), oldestIncoming.getFileName());
         }
     }
 
-    private LocalDateTime toLocal(FileTime ft) {
-        return LocalDateTime.ofInstant(ft.toInstant(), ZoneId.systemDefault());
+    private LocalDateTime toLocal(FileTime time) {
+        return LocalDateTime.ofInstant(time.toInstant(), ZoneId.systemDefault());
     }
 }
