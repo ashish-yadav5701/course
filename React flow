@@ -1,82 +1,86 @@
-import { createContext, useState, useEffect } from "react";
-import { setupFetchInterceptor } from "./fetchInterceptor";
+package com.example.healthcheck;
 
-export const AuthContext = createContext();
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 
-export const AuthProvider = ({ children }) => {
-  const [jwt, setJwt] = useState(null);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [sessionExpireAt, setSessionExpireAt] = useState(null);
+import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.Optional;
 
-  // Fetch AM Token
-  const getAmToken = async () => {
-    const res = await fetch("/api/sso/get-am-token");
-    const data = await res.json();
-    return data.amToken;
-  };
+@Slf4j
+@Component
+public class SftpHealthChecker {
 
-  // Get user info using AM token
-  const getUserInfo = async (amToken) => {
-    const res = await fetch("/api/sso/user-info", {
-      headers: { Authorization: `Bearer ${amToken}` },
-    });
-    return res.json();
-  };
+    private final Path incomingDir = Paths.get("/nas/incoming/");
+    private final Path processedDir = Paths.get("/nas/processed/");
+    private static final long SLA_MINUTES = 30;
 
-  // Convert AM token → JWT
-  const getJwt = async (amToken) => {
-    const res = await fetch("/api/sso/convert-token", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${amToken}` },
-    });
-    return res.json();
-  };
+    @Scheduled(fixedRate = 30 * 60 * 1000) // every 30 minutes
+    public void checkSftpHealth() throws IOException {
 
-  // SESSION WATCHER
-  const startSessionWatcher = (exp) => {
-    setSessionExpireAt(exp);
+        // 1️⃣ Get oldest file in incoming
+        Optional<Path> oldestIncomingOpt = Files.list(incomingDir)
+                .filter(Files::isRegularFile)
+                .min(Comparator.comparingLong(p -> {
+                    try {
+                        return Files.getLastModifiedTime(p).toMillis();
+                    } catch (IOException e) {
+                        return Long.MAX_VALUE;
+                    }
+                }));
 
-    const now = Date.now();
-    const expireTime = exp * 1000;
+        if (oldestIncomingOpt.isEmpty()) {
+            log.info("HEALTH OK – Incoming folder empty, nothing pending.");
+            return;
+        }
 
-    const timeout = expireTime - now - 10000; // 10 sec before expiry
+        Path oldestIncoming = oldestIncomingOpt.get();
+        LocalDateTime incomingTime = toLocal(Files.getLastModifiedTime(oldestIncoming));
 
-    setTimeout(() => {
-      alert("Your session expired. Refresh to login again.");
-      setJwt(null);
-      setUser(null);
-    }, timeout);
-  };
+        // 2️⃣ Get latest processed file
+        Optional<Path> latestProcessedOpt = Files.list(processedDir)
+                .filter(Files::isRegularFile)
+                .max(Comparator.comparingLong(p -> {
+                    try {
+                        return Files.getLastModifiedTime(p).toMillis();
+                    } catch (IOException e) {
+                        return Long.MIN_VALUE;
+                    }
+                }));
 
-  // MAIN SSO FLOW
-  const initLoginFlow = async () => {
-    try {
-      const amToken = await getAmToken();
-      const userInfo = await getUserInfo(amToken);
-      const jwtData = await getJwt(amToken);
+        if (latestProcessedOpt.isEmpty()) {
+            log.error("❌ SFTP FAILURE – No processed files found while incoming has files. " +
+                      "Script/SFTP may not be running.");
+            return;
+        }
 
-      setUser(userInfo);
-      setJwt(jwtData.jwt);
+        Path latestProcessed = latestProcessedOpt.get();
+        LocalDateTime processedTime = toLocal(Files.getLastModifiedTime(latestProcessed));
 
-      setupFetchInterceptor(jwtData.jwt);
+        // 3️⃣ Compute time lag
+        long lagMinutes = Duration.between(processedTime, incomingTime).toMinutes();
 
-      startSessionWatcher(jwtData.exp);
-
-    } catch (err) {
-      console.error("SSO Login failed → ", err);
-    } finally {
-      setLoading(false);
+        if (lagMinutes > SLA_MINUTES) {
+            log.error("❌ SFTP FAILURE – Pipeline stuck. " +
+                    "Oldest incoming file '{}' is {} minutes older than latest processed file '{}'. " +
+                    "This exceeds SLA of {} minutes.",
+                    oldestIncoming.getFileName(), lagMinutes,
+                    latestProcessed.getFileName(), SLA_MINUTES);
+        } else {
+            log.info("✔ SFTP OK – Oldest incoming lag: {} minutes (within SLA {} mins). " +
+                     "Latest processed file: {}, Oldest incoming: {}",
+                    lagMinutes, SLA_MINUTES,
+                    latestProcessed.getFileName(), oldestIncoming.getFileName());
+        }
     }
-  };
 
-  useEffect(() => {
-    initLoginFlow();
-  }, []);
-
-  return (
-    <AuthContext.Provider value={{ jwt, user, loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
+    private LocalDateTime toLocal(FileTime ft) {
+        return LocalDateTime.ofInstant(ft.toInstant(), ZoneId.systemDefault());
+    }
+}
