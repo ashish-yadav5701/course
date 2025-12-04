@@ -17,85 +17,93 @@ public class SftpHealthChecker {
 
     private final Path incomingDir = Paths.get("/nas/incoming/");
     private final Path processedDir = Paths.get("/nas/processed/");
-    private static final long SLA_MINUTES = 10;
 
-    @Scheduled(fixedRate = 30 * 60 * 1000)  // runs every 30 minutes
+    private static final long COOL_OFF_MIN = 2;
+    private static final long SLA_MIN = 10;
+
+    @Scheduled(fixedRate = 30 * 60 * 1000)
     public void checkSftpHealth() throws IOException {
 
-        // -----------------------------------------
-        // 1️⃣ Check oldest incoming file
-        // -----------------------------------------
-        Optional<Path> oldestIncomingOpt = Files.list(incomingDir)
-                .filter(Files::isRegularFile)
-                .min(Comparator.comparingLong(p -> {
-                    try { return Files.getLastModifiedTime(p).toMillis(); }
-                    catch (IOException e) { return Long.MAX_VALUE; }
-                }));
+        LocalDateTime now = LocalDateTime.now();
 
-        // -----------------------------------------
-        // CASE A: INCOMING EMPTY → NO ERROR
-        // -----------------------------------------
-        if (oldestIncomingOpt.isEmpty()) {
-            log.info("HEALTH OK – Incoming folder is empty. Nothing pending.");
+        // ---------------------------------------------------------
+        // 1️⃣ Find oldest eligible file in INCOMING (> cool-off)
+        // ---------------------------------------------------------
+        Optional<Path> oldestEligibleIncomingOpt =
+                Files.list(incomingDir)
+                     .filter(Files::isRegularFile)
+                     .filter(p -> {
+                         try {
+                             LocalDateTime lastMod = toLocal(Files.getLastModifiedTime(p));
+                             long age = Duration.between(lastMod, now).toMinutes();
+                             return age > COOL_OFF_MIN; 
+                         } catch (Exception e) {
+                             return false;
+                         }
+                     })
+                     .min(Comparator.comparingLong(p -> {
+                         try { return Files.getLastModifiedTime(p).toMillis(); }
+                         catch (Exception e) { return Long.MAX_VALUE; }
+                     }));
+
+        // ------------------------------
+        // CASE A: Incoming is empty
+        // ------------------------------
+        if (oldestEligibleIncomingOpt.isEmpty()) {
+            log.info("HEALTH OK – Incoming folder empty or all files within cool-off.");
             return;
         }
 
-        Path oldestIncoming = oldestIncomingOpt.get();
-        LocalDateTime incomingTime =
-                toLocal(Files.getLastModifiedTime(oldestIncoming));
+        Path oldestIncoming = oldestEligibleIncomingOpt.get();
+        LocalDateTime incomingOldestTime = toLocal(Files.getLastModifiedTime(oldestIncoming));
 
-        // -----------------------------------------
-        // 2️⃣ Check latest processed file
-        // -----------------------------------------
-        Optional<Path> latestProcessedOpt = Files.list(processedDir)
-                .filter(Files::isRegularFile)
-                .max(Comparator.comparingLong(p -> {
-                    try { return Files.getLastModifiedTime(p).toMillis(); }
-                    catch (IOException e) { return Long.MIN_VALUE; }
-                }));
+        // ---------------------------------------------------------
+        // 2️⃣ Check processed directory mtime
+        // ---------------------------------------------------------
+        LocalDateTime processedMTime;
+        try {
+            FileTime ft = Files.getLastModifiedTime(processedDir);
+            processedMTime = toLocal(ft);
+        } catch (Exception e) {
+            processedMTime = null;
+        }
 
-        // -----------------------------------------
-        // CASE B: PROCESSED EMPTY, INCOMING HAS FILES → CHECK SLA
-        // -----------------------------------------
-        if (latestProcessedOpt.isEmpty()) {
+        // ------------------------------
+        // CASE C: Processed dir empty (or never written) but incoming has eligible files
+        // ------------------------------
+        if (processedMTime == null) {
 
-            long age = Duration.between(incomingTime, LocalDateTime.now()).toMinutes();
+            long incomingAge = Duration.between(incomingOldestTime, now).toMinutes();
 
-            if (age > SLA_MINUTES) {
-                log.error("❌ SFTP FAILURE – Processed empty but incoming '{}' "
-                        + "waiting {} minutes (SLA={} mins).",
-                        oldestIncoming.getFileName(), age, SLA_MINUTES);
+            if (incomingAge > SLA_MIN) {
+                log.error("❌ SFTP FAILURE – Processed folder has no activity & oldest incoming '{}' "
+                        + "is {} minutes old (> SLA {} min).",
+                        oldestIncoming.getFileName(), incomingAge, SLA_MIN);
             } else {
-                log.info("⏳ Within SLA – Processed empty but oldest incoming '{}' "
-                        + "is only {} minutes old.",
-                        oldestIncoming.getFileName(), age);
+                log.info("⏳ Within SLA – Processed empty but incoming '{}' age {} min.",
+                        oldestIncoming.getFileName(), incomingAge);
             }
             return;
         }
 
-        // -----------------------------------------
-        // CASE C: BOTH FOLDERS HAVE FILES → CHECK SLA
-        // -----------------------------------------
-        Path latestProcessed = latestProcessedOpt.get();
-        LocalDateTime processedTime =
-                toLocal(Files.getLastModifiedTime(latestProcessed));
+        // ------------------------------
+        // CASE D: Both incoming & processed active
+        // ------------------------------
+        long lag = Duration.between(processedMTime, incomingOldestTime).toMinutes();
 
-        long lag = Duration.between(processedTime, incomingTime).toMinutes();
+        // handle negative lag
+        if (lag < 0) lag = 0;
 
-        if (lag > SLA_MINUTES) {
-            log.error("❌ SFTP FAILURE – Oldest incoming '{}' is {} minutes older "
-                    + "than latest processed '{}' (SLA={} mins).",
-                    oldestIncoming.getFileName(), lag,
-                    latestProcessed.getFileName(), SLA_MINUTES);
+        if (lag > SLA_MIN) {
+            log.error("❌ SFTP FAILURE – Lag {} min > SLA {} min. Oldest incoming: '{}', processed folder mtime: {}.",
+                    lag, SLA_MIN, oldestIncoming.getFileName(), processedMTime);
         } else {
-            log.info("✔ SFTP OK – Lag {} mins is within SLA {} mins. "
-                    + "Latest processed={}, Oldest incoming={}",
-                    lag, SLA_MINUTES,
-                    latestProcessed.getFileName(), oldestIncoming.getFileName());
+            log.info("✔ SFTP OK – Lag {} min (≤ SLA {}). Oldest incoming='{}', processed mtime={}",
+                    lag, SLA_MIN, oldestIncoming.getFileName(), processedMTime);
         }
     }
 
-    private LocalDateTime toLocal(FileTime time) {
-        return LocalDateTime.ofInstant(time.toInstant(), ZoneId.systemDefault());
+    private LocalDateTime toLocal(FileTime ft) {
+        return LocalDateTime.ofInstant(ft.toInstant(), ZoneId.systemDefault());
     }
 }
