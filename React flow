@@ -1,9 +1,167 @@
-Problem: Need to be able to see all deposits booked globally with their associated placement date, this placement date has to be the original placement date, and not the date of the placement if the TD is automatically rolled
+import React, { useEffect, useRef, useState } from "react";
+import * as am5 from "@amcharts/amcharts5";
+import * as am5hierarchy from "@amcharts/amcharts5/hierarchy";
+import am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
 
-Current State: At first glance - RPS, WDA, and OBS seems to be fine by taking account start date from accounts GDA, however this does not seem to be so simple for HUB, HUB has account open date, and account start date, we believe that start date references the rolling renewal date and account open date is the relevant date required
+const STATUS_COLORS = {
+  "REFUSED": "#e74c3c",
+  "WAIT CONFIRMATION": "#f39c12",
+  "REJECTED": "#c0392b",
+  "RETURNED": "#9b59b6",
+  "COMPLETED": "#27ae60",
+  "CANCELLED": "#7f8c8d",
+  "REFUNDED": "#2980b9"
+};
 
-Solution: Take from accounts GDA and include
+export default function StatusForceGraph() {
+  const chartRef = useRef(null);
+  const [view, setView] = useState("chart");
+  const [api1Data, setApi1Data] = useState(null);
+  const [api2Data, setApi2Data] = useState(null);
 
-start date and close date in liquidity CDA, and take from TDACMSP TDDTAO (date account opened) and include in liquidity CDA, and do a comparison to ensure that TDDTAO is the correct field that needs to be considered for HUB
+  // Simulated API calls
+  useEffect(() => {
+    const fetchData = async () => {
+      const res1 = [{
+        REFUSED: 6861,
+        "WAIT CONFIRMATION": 76,
+        REJECTED: 116823,
+        RETURNED: 33589,
+        COMPLETED: 163776974,
+        CANCELLED: 16302,
+        REFUNDED: 9997
+      }];
 
-Rough Work: 1.5 weeks worth ish for a DE to make the changes and 1.5 weeks worth ish for a DA to validate data and ensure that the correct fields are being pulled
+      const res2 = [{
+        REFUSED: 5000,
+        "WAIT CONFIRMATION": 120,
+        REJECTED: 90000,
+        RETURNED: 20000,
+        COMPLETED: 120000000,
+        CANCELLED: 8000,
+        REFUNDED: 3000
+      }];
+
+      setApi1Data(res1[0]);
+      setApi2Data(res2[0]);
+    };
+
+    fetchData();
+  }, []);
+
+  // Chart rendering
+  useEffect(() => {
+    if (!api1Data || !api2Data || view !== "chart") return;
+
+    const root = am5.Root.new(chartRef.current);
+    root.setThemes([am5themes_Animated.new(root)]);
+
+    const container = root.container.children.push(
+      am5.Container.new(root, {
+        width: am5.percent(100),
+        height: am5.percent(100),
+        layout: root.verticalLayout
+      })
+    );
+
+    const series = container.children.push(
+      am5hierarchy.ForceDirected.new(root, {
+        valueField: "value",
+        categoryField: "name",
+        childDataField: "children",
+        linkWithField: "linkWith",
+        manyBodyStrength: -15
+      })
+    );
+
+    series.nodes.template.setAll({
+      tooltipText: "{name}: {value}",
+      fillField: "fill"
+    });
+
+    const buildChildren = (data) =>
+      Object.keys(data).map((key) => ({
+        name: key,
+        value: data[key],
+        fill: am5.color(STATUS_COLORS[key])
+      }));
+
+    const chartData = [
+      {
+        name: "API 1",
+        children: buildChildren(api1Data)
+      },
+      {
+        name: "API 2",
+        children: buildChildren(api2Data)
+      }
+    ];
+
+    series.data.setAll(chartData);
+
+    // Legend
+    const legend = container.children.push(
+      am5.Legend.new(root, {
+        layout: root.horizontalLayout,
+        centerX: am5.percent(50),
+        x: am5.percent(50)
+      })
+    );
+
+    const legendData = Object.keys(STATUS_COLORS).map((status) => ({
+      name: status,
+      fill: am5.color(STATUS_COLORS[status])
+    }));
+
+    legend.data.setAll(legendData);
+
+    return () => {
+      root.dispose();
+    };
+  }, [api1Data, api2Data, view]);
+
+  // Table view renderer
+  const renderTable = () => {
+    if (!api1Data || !api2Data) return null;
+
+    const statuses = Object.keys(STATUS_COLORS);
+
+    return (
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>API 1</th>
+            <th>API 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          {statuses.map((status) => (
+            <tr key={status}>
+              <td style={{ color: STATUS_COLORS[status], fontWeight: "bold" }}>
+                {status}
+              </td>
+              <td>{api1Data[status]}</td>
+              <td>{api2Data[status]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <button onClick={() => setView("chart")}>Chart View</button>
+        <button onClick={() => setView("table")}>Table View</button>
+      </div>
+
+      {view === "chart" ? (
+        <div ref={chartRef} style={{ width: "100%", height: "600px" }} />
+      ) : (
+        renderTable()
+      )}
+    </div>
+  );
+}
