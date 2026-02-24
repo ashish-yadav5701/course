@@ -4,126 +4,90 @@ import * as am5hierarchy from "@amcharts/amcharts5/hierarchy";
 import am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
 
 const STATUS_COLORS = {
-  "REFUSED": "#e74c3c",
+  REFUSED: "#e74c3c",
   "WAIT CONFIRMATION": "#f39c12",
-  "REJECTED": "#c0392b",
-  "RETURNED": "#9b59b6",
-  "COMPLETED": "#27ae60",
-  "CANCELLED": "#7f8c8d",
-  "REFUNDED": "#2980b9"
+  REJECTED: "#c0392b",
+  RETURNED: "#9b59b6",
+  COMPLETED: "#27ae60",
+  CANCELLED: "#7f8c8d",
+  REFUNDED: "#2980b9"
 };
 
-export default function StatusForceGraph() {
-  const chartRef = useRef(null);
+export default function TwoForceMaps() {
+  const chart1Ref = useRef(null);
+  const chart2Ref = useRef(null);
   const [view, setView] = useState("chart");
-  const [api1Data, setApi1Data] = useState(null);
-  const [api2Data, setApi2Data] = useState(null);
 
-  // Simulated API calls
-  useEffect(() => {
-    const fetchData = async () => {
-      const res1 = [{
-        REFUSED: 6861,
-        "WAIT CONFIRMATION": 76,
-        REJECTED: 116823,
-        RETURNED: 33589,
-        COMPLETED: 163776974,
-        CANCELLED: 16302,
-        REFUNDED: 9997
-      }];
+  const api1 = {
+    REFUSED: 6861,
+    "WAIT CONFIRMATION": 76,
+    REJECTED: 116823,
+    RETURNED: 33589,
+    COMPLETED: 163776974,
+    CANCELLED: 16302,
+    REFUNDED: 9997
+  };
 
-      const res2 = [{
-        REFUSED: 5000,
-        "WAIT CONFIRMATION": 120,
-        REJECTED: 90000,
-        RETURNED: 20000,
-        COMPLETED: 120000000,
-        CANCELLED: 8000,
-        REFUNDED: 3000
-      }];
+  const api2 = {
+    REFUSED: 5000,
+    "WAIT CONFIRMATION": 120,
+    REJECTED: 90000,
+    RETURNED: 20000,
+    COMPLETED: 120000000,
+    CANCELLED: 8000,
+    REFUNDED: 3000
+  };
 
-      setApi1Data(res1[0]);
-      setApi2Data(res2[0]);
-    };
+  // 🔥 Normalize values (log scale)
+  const normalize = (data) => {
+    const values = Object.values(data);
+    const max = Math.max(...values);
 
-    fetchData();
-  }, []);
+    return Object.keys(data).map((key) => ({
+      name: key,
+      realValue: data[key],
+      value: Math.log10(data[key] + 1), // important
+      fill: am5.color(STATUS_COLORS[key])
+    }));
+  };
 
-  // Chart rendering
-  useEffect(() => {
-    if (!api1Data || !api2Data || view !== "chart") return;
-
-    const root = am5.Root.new(chartRef.current);
+  const createChart = (ref, data) => {
+    const root = am5.Root.new(ref);
     root.setThemes([am5themes_Animated.new(root)]);
 
-    const container = root.container.children.push(
-      am5.Container.new(root, {
-        width: am5.percent(100),
-        height: am5.percent(100),
-        layout: root.verticalLayout
-      })
-    );
-
-    const series = container.children.push(
+    const series = root.container.children.push(
       am5hierarchy.ForceDirected.new(root, {
         valueField: "value",
         categoryField: "name",
-        childDataField: "children",
-        linkWithField: "linkWith",
-        manyBodyStrength: -15
+        manyBodyStrength: -20,
+        minRadius: 25,   // 🔥 FIXED minimum
+        maxRadius: 90    // 🔥 FIXED maximum
       })
     );
 
     series.nodes.template.setAll({
-      tooltipText: "{name}: {value}",
+      tooltipText: "{name}\n{realValue}",
       fillField: "fill"
     });
 
-    const buildChildren = (data) =>
-      Object.keys(data).map((key) => ({
-        name: key,
-        value: data[key],
-        fill: am5.color(STATUS_COLORS[key])
-      }));
+    series.data.setAll(normalize(data));
 
-    const chartData = [
-      {
-        name: "API 1",
-        children: buildChildren(api1Data)
-      },
-      {
-        name: "API 2",
-        children: buildChildren(api2Data)
-      }
-    ];
+    return root;
+  };
 
-    series.data.setAll(chartData);
+  useEffect(() => {
+    if (view !== "chart") return;
 
-    // Legend
-    const legend = container.children.push(
-      am5.Legend.new(root, {
-        layout: root.horizontalLayout,
-        centerX: am5.percent(50),
-        x: am5.percent(50)
-      })
-    );
-
-    const legendData = Object.keys(STATUS_COLORS).map((status) => ({
-      name: status,
-      fill: am5.color(STATUS_COLORS[status])
-    }));
-
-    legend.data.setAll(legendData);
+    const root1 = createChart(chart1Ref.current, api1);
+    const root2 = createChart(chart2Ref.current, api2);
 
     return () => {
-      root.dispose();
+      root1.dispose();
+      root2.dispose();
     };
-  }, [api1Data, api2Data, view]);
+  }, [view]);
 
-  // Table view renderer
   const renderTable = () => {
-    if (!api1Data || !api2Data) return null;
-
     const statuses = Object.keys(STATUS_COLORS);
 
     return (
@@ -141,8 +105,8 @@ export default function StatusForceGraph() {
               <td style={{ color: STATUS_COLORS[status], fontWeight: "bold" }}>
                 {status}
               </td>
-              <td>{api1Data[status]}</td>
-              <td>{api2Data[status]}</td>
+              <td>{api1[status]}</td>
+              <td>{api2[status]}</td>
             </tr>
           ))}
         </tbody>
@@ -158,7 +122,16 @@ export default function StatusForceGraph() {
       </div>
 
       {view === "chart" ? (
-        <div ref={chartRef} style={{ width: "100%", height: "600px" }} />
+        <div style={{ display: "flex", gap: "20px" }}>
+          <div
+            ref={chart1Ref}
+            style={{ width: "50%", height: "600px" }}
+          />
+          <div
+            ref={chart2Ref}
+            style={{ width: "50%", height: "600px" }}
+          />
+        </div>
       ) : (
         renderTable()
       )}
