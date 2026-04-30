@@ -1,0 +1,135 @@
+Create a production-grade Spring Boot 3 (Java 17) authentication service implementing the following flow:
+
+Context
+
+This service acts as an authorization layer that:
+
+- Accepts an existing AMToken (SSO token)
+- Calls downstream translator API to get a short-lived JWT
+- Extracts identity (psid) from the JWT
+- Generates a long-lived JWT signed using RSA256 (RS256)
+- Manages entitlement retrieval with DB caching + API fallback
+
+---
+
+🔐 Security Requirements
+
+1. Use RSA256 (asymmetric JWT signing)
+   
+   - Load private key from external source (PEM / Vault / keystore)
+   - Expose public key via JWKS endpoint: "/.well-known/jwks.json"
+   - Include "kid" in JWT header
+
+2. JWT Claims:
+   
+   - sub → psid
+   - iss → "auth-service"
+   - aud → "internal-services"
+   - exp → configurable (long-lived)
+   - roles / entitlements
+
+3. Follow best practices:
+   
+   - Validate issuer, audience, expiry on incoming tokens
+   - Use short-lived upstream JWT, long-lived internal JWT
+   - No sensitive data in JWT payload
+
+---
+
+🚀 API 1: Generate Access Token
+
+POST /auth/api/access-token
+
+Flow:
+
+1. Read "AMToken" from cookie
+2. Call external Translator API:
+   - Input: AMToken
+   - Output: short-lived JWT
+3. Validate received JWT (signature + expiry)
+4. Extract "sub" → map to "psid"
+5. Generate new long-lived JWT using RSA private key
+6. Return:
+   - JSON response with token
+   - Set cookies:
+     - "AccessToken" (JWT)
+     - "psid"
+
+---
+
+📊 API 2: Fetch Entitlements
+
+GET /auth/api/entitlements
+
+Flow:
+
+1. Read "AMToken" and "psid" from cookies
+2. Check DB table: "employee_entitlement"
+3. If found → return cached entitlements
+4. If not found:
+   - Call Translator API
+   - Call Entitlement API
+   - Filter response using allow-list
+   - Upsert into DB
+5. Return filtered entitlements
+
+---
+
+🗄️ Database
+
+- Use JPA/Hibernate (no Flyway)
+- Table: employee_entitlement
+  - psid
+  - entitlement_data (JSON / CLOB)
+  - last_updated
+
+---
+
+🏗️ Code Structure
+
+- AuthController
+- TokenService
+- JwtService (RS256 signing + validation)
+- KeyProvider (load keys externally)
+- TranslatorClient (REST client)
+- EntitlementService
+- Repository (JPA)
+- SecurityConfig (stateless, no session)
+
+---
+
+🔑 JWKS Endpoint
+
+- Endpoint: "GET /.well-known/jwks.json"
+- Return public key in JWK format (kid, kty, use, alg, n, e)
+- Support multiple keys for rotation
+
+Note: JWKS allows services to fetch and cache keys instead of calling auth service on every request
+
+---
+
+⚙️ Additional Requirements
+
+- Use RestTemplate or WebClient for downstream calls
+- Add proper exception handling (invalid token, expired token)
+- Add logging for tracing flow (psid, correlation id)
+- Make service stateless
+- Use cookies with HttpOnly + Secure
+
+---
+
+🎯 Goal
+
+Produce clean, modular, scalable code that:
+
+- Supports microservices architecture
+- Enables other services to validate JWT locally using JWKS (no per-request network calls)
+- Can scale to high-throughput systems (banking-grade)
+
+---
+
+BONUS (if possible)
+
+- Add refresh token mechanism
+- Add key rotation support (multiple kid)
+- Add cache layer (Redis optional)
