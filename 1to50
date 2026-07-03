@@ -1,0 +1,3298 @@
+
+# KPMG India L1 Technical Interview Guide: Java + React Full Stack
+
+## Topic 1: Java & Spring Boot (50 Questions)
+
+### Core Java Fundamentals
+
+**1. How does memory management work in Java? Differentiate between Stack and Heap memory.**
+
+**Answer:**
+Java memory is managed by the JVM through automatic garbage collection. The memory is divided into two main areas:
+
+**Stack Memory:**
+- Stores method calls, local variables, and reference variables
+- Each thread has its own stack (thread-safe)
+- Memory is allocated in LIFO (Last-In-First-Out) order
+- Variables are scoped to their method block
+- Size is fixed per thread and typically smaller than heap
+- Memory is automatically allocated and deallocated when methods complete
+
+**Heap Memory:**
+- Stores all objects created using the `new` keyword
+- Shared across all threads (requires synchronization)
+- Managed by Garbage Collector (GC)
+- Divided into Young Generation, Old Generation (Tenured), and Permanent Generation/Metaspace
+- Objects remain in heap until GC determines they are no longer referenced
+- Larger memory space compared to stack
+
+**Example:**
+```java
+public void memoryExample() {
+    int primitive = 5;           // Stored in Stack
+    String reference = "Hello";   // Reference in Stack, String literal in Heap (String Pool)
+    Employee emp = new Employee();// Reference in Stack, Object in Heap
+}
+```
+
+2. What are the key differences between String, StringBuilder, and StringBuffer?
+
+Answer:
+
+Feature String StringBuilder StringBuffer
+Immutability Immutable Mutable Mutable
+Thread-Safety Thread-safe (immutable) Not thread-safe Thread-safe (synchronized)
+Performance Slow for modifications (creates new objects) Fastest for single-threaded Slower than StringBuilder (synchronization overhead)
+Usage When value doesn't change frequently Single-threaded concatenation Multi-threaded concatenation
+Introduced JDK 1.0 JDK 1.5 JDK 1.0
+
+Example:
+
+```java
+// String - Creates new object each time
+String str = "Hello";
+str += " World";  // Creates new String object
+
+// StringBuilder - Efficient single-threaded
+StringBuilder sb = new StringBuilder("Hello");
+sb.append(" World"); // Modifies the same object
+
+// StringBuffer - Thread-safe
+StringBuffer sbf = new StringBuffer("Hello");
+sbf.append(" World"); // Synchronized, safe for multi-threading
+```
+
+3. Explain the internal working of a HashMap in Java 8. What happens during a hash collision?
+
+Answer:
+HashMap stores key-value pairs in an array of Node objects (buckets).
+
+Internal Structure (Java 8+):
+
+· Array of Node<K,V> called table (default capacity: 16)
+· Each Node contains: hash, key, value, and next pointer
+· Buckets transition from linked list to Red-Black Tree when threshold (8) is reached
+
+Put Operation:
+
+1. Calculate key's hash: hash = key.hashCode() ^ (key.hashCode() >>> 16)
+2. Determine bucket index: index = (n - 1) & hash (n = table length)
+3. If bucket is empty, create new Node and store
+4. If collision occurs, check if key exists:
+   · If key exists, replace value
+   · If new key, append Node to existing chain/treap
+
+Hash Collision Resolution:
+
+```
+Key1 -> Hash1 -> Index 5 (Node1)
+Key2 -> Hash2 -> Index 5 (Node1 -> Node2)
+Key3 -> Hash3 -> Index 5 (Node1 -> Node2 -> Node3)
+```
+
+Example:
+
+```java
+// HashMap with 2 keys having same hash
+HashMap<String, String> map = new HashMap<>();
+map.put("key1", "value1");
+map.put("key2", "value2");
+// Both keys are stored in same bucket as a linked list/Red-Black tree
+```
+
+4. When does a HashMap bucket transition from a Linked List to a Red-Black Tree? What is the threshold?
+
+Answer:
+
+· Threshold: When the number of elements in a bucket exceeds TREEIFY_THRESHOLD = 8
+· Transition Triggers:
+  · Same bucket has 9 or more elements
+  · Table size >= MIN_TREEIFY_CAPACITY = 64
+  · Both conditions must be met (if table size < 64, table resizing occurs instead)
+
+Why Red-Black Tree?
+
+· O(log n) search time vs O(n) for linked list
+· More efficient for hash-intensive collisions
+· Red-Black tree maintains balanced structure
+
+Untreeify Threshold: When bucket size reduces to <= 6 (UNTREEIFY_THRESHOLD)
+
+Example:
+
+```java
+// This can trigger treeification if all keys hash to same bucket
+for (int i = 0; i < 10; i++) {
+    map.put("key" + i, "value" + i); // All keys may end up in same bucket
+}
+```
+
+5. What is the difference between fail-fast and fail-safe iterators? Give examples.
+
+Answer:
+
+Feature Fail-Fast Fail-Safe
+Behavior Throws ConcurrentModificationException if collection modified during iteration Doesn't throw exception; works on copy of collection
+Implementation Uses a modCount counter to detect changes Operates on a snapshot/clone
+Memory Overhead Lower Higher (creates copy)
+Examples ArrayList, HashMap, HashSet ConcurrentHashMap, CopyOnWriteArrayList
+
+Example:
+
+```java
+// Fail-Fast (throws ConcurrentModificationException)
+List<String> list = new ArrayList<>(Arrays.asList("A", "B", "C"));
+Iterator<String> iter = list.iterator();
+while (iter.hasNext()) {
+    String s = iter.next();
+    list.remove(s); // Throws ConcurrentModificationException
+}
+
+// Fail-Safe (safe modification)
+List<String> safeList = new CopyOnWriteArrayList<>(Arrays.asList("A", "B", "C"));
+Iterator<String> safeIter = safeList.iterator();
+while (safeIter.hasNext()) {
+    String s = safeIter.next();
+    safeList.remove(s); // Allowed, works on copy
+}
+
+// ConcurrentHashMap (fail-safe for multi-threaded)
+ConcurrentHashMap<String, String> concurrentMap = new ConcurrentHashMap<>();
+concurrentMap.put("key1", "value1");
+Iterator<Map.Entry<String, String>> entryIter = concurrentMap.entrySet().iterator();
+while (entryIter.hasNext()) {
+    Map.Entry<String, String> entry = entryIter.next();
+    concurrentMap.remove("key1"); // Safe, no exception
+}
+```
+
+6. How does ConcurrentHashMap achieve thread safety without locking the entire map?
+
+Answer:
+ConcurrentHashMap uses Segment-based locking (pre-Java 8) and Node-level locking (Java 8+).
+
+Java 8 Implementation:
+
+· Node-Level Locking: Only locks individual buckets (nodes) or subtrees
+· CAS Operations: Uses Compare-And-Swap for non-blocking operations
+· TreeBins: Uses a combination of CAS and synchronized for tree nodes
+· size(): Not accurate in real-time but approximate (uses sumCount() method)
+
+Key Optimizations:
+
+1. put(): Only locks the specific bucket
+   ```java
+   // Simplified concept
+   final V putVal(K key, V value, boolean onlyIfAbsent) {
+       // ... CAS for null bucket
+       synchronized (f) { // Lock only the bucket, not entire map
+           // put logic
+       }
+   }
+   ```
+2. get(): Completely lock-free (uses volatile reads)
+3. resize(): Lock-free while old segments remain accessible
+
+Comparison:
+
+· Hashtable: Synchronizes entire table (high contention)
+· ConcurrentHashMap: Fine-grained locking (low contention)
+
+7. Explain the Java Exception hierarchy. What is the difference between Checked and Unchecked exceptions?
+
+Answer:
+
+```
+Throwable
+├── Error (Unchecked) - System-level errors (OutOfMemoryError, StackOverflowError)
+└── Exception
+    ├── IOException, SQLException, InterruptedException (Checked exceptions)
+    └── RuntimeException (Unchecked)
+        ├── NullPointerException
+        ├── IllegalArgumentException
+        ├── ArithmeticException
+        └── ArrayIndexOutOfBoundsException
+```
+
+Checked Exceptions:
+
+· Must be handled at compile time using try-catch or throws
+· Represent recoverable conditions
+· Examples: IOException, SQLException, FileNotFoundException
+
+Unchecked Exceptions (RuntimeException):
+
+· Not checked at compile time
+· Represent programming errors
+· Examples: NullPointerException, ArrayIndexOutOfBoundsException
+
+Example:
+
+```java
+// Checked Exception - must handle
+try {
+    FileInputStream file = new FileInputStream("file.txt");
+} catch (FileNotFoundException e) {
+    // Must handle or declare throws
+}
+
+// Unchecked Exception - optional to handle
+String str = null;
+str.toString(); // NullPointerException - runtime error
+```
+
+8. What is the purpose of the hashCode() and equals() contract? What happens if you override one but not the other?
+
+Answer:
+The contract between hashCode() and equals() states:
+
+1. If a.equals(b) is true, then a.hashCode() == b.hashCode() must also be true
+2. If a.hashCode() == b.hashCode(), equals() may be true or false (not guaranteed)
+3. Consistent results when called repeatedly on the same object
+
+Consequences of Breaking Contract:
+
+Override only equals() (not hashCode()):
+
+· Objects that are logically equal may have different hash codes
+· Violation when using HashSet, HashMap, or HashTable
+· Objects may be stored in different buckets, breaking functionality
+
+Override only hashCode() (not equals()):
+
+· Two different objects could have same hash code
+· Leads to incorrect contains() checks in collections
+· May cause keys to be considered equal incorrectly
+
+Example:
+
+```java
+class Employee {
+    private String id;
+    private String name;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Employee)) return false;
+        Employee e = (Employee) o;
+        return Objects.equals(id, e.id);
+    }
+    
+    // If equals is overridden, must override hashCode
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
+}
+```
+
+9. Explain the use of the volatile keyword in Java multi-threading.
+
+Answer:
+The volatile keyword ensures variable visibility across threads by:
+
+1. Memory Visibility: Changes to volatile variables are immediately visible to all threads
+2. Happens-Before Guarantee: Writes to volatile variables happen before subsequent reads
+3. Cache Coherence: Prevents thread-local caching of the variable
+
+Key Points:
+
+· Only guarantees visibility, not atomicity
+· Works as a lightweight synchronization alternative to synchronized
+· Cannot be used with non-atomic operations (x++ is not atomic even with volatile)
+· Often used for flags and state variables
+
+Example:
+
+```java
+// Without volatile - may cause infinite loop
+class SharedFlag {
+    private boolean running = true; // Not volatile
+    
+    public void run() {
+        while (running) { 
+            // Thread may cache running = true forever
+        }
+    }
+    public void stop() {
+        running = false; // May not be visible to other threads
+    }
+}
+
+// With volatile - guarantees visibility
+class SharedFlag {
+    private volatile boolean running = true;
+    
+    public void run() {
+        while (running) { 
+            // Always reads from main memory
+        }
+    }
+    public void stop() {
+        running = false; // Immediately visible to all threads
+    }
+}
+```
+
+10. What is the difference between ExecutorService.submit() and ExecutorService.execute()?
+
+Answer:
+
+Feature execute(Runnable command) submit(Callable<T> task)
+Return Type void Future<T>
+Result Access No result retrieval Can get result via Future.get()
+Exception Handling Uncaught exceptions go to UncaughtExceptionHandler Exceptions are wrapped in ExecutionException in Future
+Callable Support No Yes
+Rejection Throws RejectedExecutionException Same
+When to Use Fire-and-forget tasks Tasks requiring results or exception handling
+
+Example:
+
+```java
+ExecutorService executor = Executors.newFixedThreadPool(5);
+
+// execute - no result
+executor.execute(() -> System.out.println("Task executed"));
+
+// submit - with Runnable (no result)
+Future<?> future1 = executor.submit(() -> System.out.println("Runnable submitted"));
+future1.get(); // Returns null
+
+// submit - with Callable (returns result)
+Future<String> future2 = executor.submit(() -> {
+    Thread.sleep(1000);
+    return "Result from Callable";
+});
+String result = future2.get(); // Blocks until result available
+
+// Exception handling with submit
+Future<Void> future3 = executor.submit(() -> {
+    throw new RuntimeException("Error");
+});
+try {
+    future3.get(); // Throws ExecutionException containing the error
+} catch (ExecutionException e) {
+    // Handle the wrapped exception
+}
+```
+
+11. How do Functional Interfaces and Lambda Expressions work in Java 8?
+
+Answer:
+Functional Interface:
+
+· Interface with exactly one abstract method
+· Can have multiple default or static methods
+· Annotated with @FunctionalInterface (optional)
+
+Lambda Expression:
+
+· Implementation of functional interface using concise syntax
+· Enables functional programming in Java
+· Works with method references and streams API
+
+Syntax:
+
+```java
+// Traditional anonymous class
+Runnable r1 = new Runnable() {
+    @Override
+    public void run() {
+        System.out.println("Hello");
+    }
+};
+
+// Lambda expression
+Runnable r2 = () -> System.out.println("Hello");
+
+// Lambda with parameters
+Comparator<String> comp = (s1, s2) -> s1.length() - s2.length();
+
+// Multiple statements in lambda
+Predicate<Integer> predicate = (Integer i) -> {
+    i = i * 2;
+    return i > 10;
+};
+```
+
+Common Functional Interfaces:
+
+Interface Method Purpose
+Predicate<T> test(T t) Boolean condition
+Function<T,R> apply(T t) Transform T to R
+Consumer<T> accept(T t) Consume T (no return)
+Supplier<T> get() Provide T
+UnaryOperator<T> apply(T t) Transform T to T
+
+Example:
+
+```java
+// Using functional interfaces with lambda
+List<String> names = Arrays.asList("Alice", "Bob", "Charlie", "David");
+
+// Predicate
+Predicate<String> startsWithA = name -> name.startsWith("A");
+names.stream().filter(startsWithA).forEach(System.out::println);
+
+// Function
+Function<String, Integer> nameLength = name -> name.length();
+names.stream().map(nameLength).forEach(System.out::println);
+
+// Method reference - equivalent to lambda
+names.forEach(System.out::println); // Not names.forEach(name -> System.out.println(name))
+```
+
+12. Explain the difference between Stream.map() and Stream.flatMap() with a practical use case.
+
+Answer:
+
+Feature map() flatMap()
+Transformation One-to-one mapping (1→1) One-to-many mapping (1→n)
+Result Type Stream of same type as output Flattened Stream of elements
+Use Case Simple transformation Nested collections/flattening
+Return Type Stream<R> Stream<R> (flattened)
+
+Practical Example:
+
+```java
+// map(): Simple transformation
+List<String> words = Arrays.asList("hello", "world");
+List<Integer> wordLengths = words.stream()
+    .map(String::length)
+    .collect(Collectors.toList());
+// Result: [5, 5]
+
+// flatMap(): Flatten nested collections
+List<List<Integer>> nestedList = Arrays.asList(
+    Arrays.asList(1, 2),
+    Arrays.asList(3, 4),
+    Arrays.asList(5, 6)
+);
+List<Integer> flatList = nestedList.stream()
+    .flatMap(Collection::stream)
+    .collect(Collectors.toList());
+// Result: [1, 2, 3, 4, 5, 6]
+
+// Use case: Find all characters from a list of words
+String[] moreWords = {"hello", "world"};
+List<Character> chars = Arrays.stream(moreWords)
+    .flatMap(word -> word.chars().mapToObj(c -> (char)c))
+    .collect(Collectors.toList());
+// Result: ['h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd']
+
+// Use case: Processing nested objects
+class Department {
+    List<Employee> employees;
+}
+List<Department> departments = // ... 
+List<Employee> allEmployees = departments.stream()
+    .flatMap(dept -> dept.getEmployees().stream())
+    .collect(Collectors.toList());
+```
+
+13. How does the Optional class prevent NullPointerException? Name three terminal methods of Optional.
+
+Answer:
+Optional is a container object that may or may not contain a non-null value. It provides a functional approach to handle nullable values.
+
+Key Benefits:
+
+· Forces explicit handling of possible null values
+· Provides fluent API for functional composition
+· Reduces boilerplate null checks
+· Helps prevent NullPointerException
+
+Common Terminal Methods:
+
+1. get() - Returns value if present, throws NoSuchElementException if empty
+2. orElse(T other) - Returns value if present, otherwise returns the default value
+3. orElseGet(Supplier<? extends T> other) - Returns value if present, otherwise invokes Supplier
+
+Example:
+
+```java
+// Without Optional - prone to NPE
+String name = getUserName();
+if (name != null) {
+    System.out.println(name.toUpperCase());
+}
+
+// With Optional
+Optional<String> optName = Optional.ofNullable(getUserName());
+
+// Method 1: Safe access
+optName.ifPresent(n -> System.out.println(n.toUpperCase()));
+
+// Method 2: Default value
+String name = optName.orElse("Default Name");
+
+// Method 3: Lazy evaluation
+String name = optName.orElseGet(() -> fetchFromDatabase());
+
+// Method 4: Throw custom exception
+String name = optName.orElseThrow(() -> new RuntimeException("Name not found"));
+
+// Terminal methods example
+Optional<String> optional = Optional.of("Hello");
+
+// 1. get() - risky, use with isPresent()
+if (optional.isPresent()) {
+    String value = optional.get(); // returns "Hello"
+}
+
+// 2. orElse() - safe default
+String value = optional.orElse("Default"); // "Hello"
+
+// 3. orElseGet() - lazy default
+String value = optional.orElseGet(() -> "Default"); // "Hello"
+
+// 4. ifPresent() - execute if value exists
+optional.ifPresent(v -> System.out.println("Value: " + v));
+```
+
+14. What are the new features introduced in Java 17 that a developer should leverage (e.g., Records, Sealed Classes)?
+
+Answer:
+Java 17 Features (LTS):
+
+1. Records (Standard):
+
+· Transparent data carriers with boilerplate reduction
+· Automatically provides constructor, getters, equals, hashCode, toString
+
+```java
+public record Person(String name, int age) {}
+Person p = new Person("Alice", 30);
+System.out.println(p.name()); // Accessor
+System.out.println(p);
+```
+
+2. Sealed Classes:
+
+· Restricts which classes/interfaces can extend/implement
+· Enables exhaustive pattern matching
+
+```java
+public sealed interface Shape permits Circle, Rectangle, Square {}
+public final class Circle implements Shape {}
+public final class Rectangle implements Shape {}
+```
+
+3. Pattern Matching for switch:
+
+```java
+String result = switch (obj) {
+    case Integer i -> "Integer: " + i;
+    case String s -> "String: " + s;
+    case null -> "null";
+    default -> "Unknown";
+};
+```
+
+4. Text Blocks (Standard):
+
+```java
+String json = """
+    {
+        "name": "John",
+        "age": 30
+    }
+    """;
+```
+
+5. New String Methods:
+
+```java
+String s = "Hello World";
+System.out.println(s.strip()); // "Hello World"
+System.out.println(s.repeat(3)); // "Hello WorldHello WorldHello World"
+```
+
+6. Foreign Function & Memory API:
+
+· For interop with native code
+· Memory access outside heap
+
+7. Enhanced Pseudo-Random Number Generators:
+
+```java
+RandomGenerator generator = RandomGenerator.of("L64X128MixRandom");
+int random = generator.nextInt(100);
+```
+
+15. What is the difference between a Shallow Copy and a Deep Copy in Java? How do you implement both?
+
+Answer:
+
+Shallow Copy:
+
+· Creates new object but shares references to mutable objects
+· Only top-level primitive fields are copied
+· Changes in copied object's nested objects affect original
+
+Deep Copy:
+
+· Creates completely independent copy
+· All nested objects are recursively copied
+· No shared references between original and copy
+
+Implementation Methods:
+
+Shallow Copy:
+
+```java
+// Using clone() with default implementation
+class Employee implements Cloneable {
+    String name;
+    Address address; // Reference object
+    
+    @Override
+    protected Object clone() throws CloneNotSupportedException {
+        return super.clone(); // Shallow copy
+    }
+}
+
+// Copy constructor (shallow)
+Employee shallowCopy = new Employee(original);
+```
+
+Deep Copy:
+
+```java
+// Using clone() with custom implementation
+class Employee implements Cloneable {
+    String name;
+    Address address;
+    
+    @Override
+    protected Object clone() throws CloneNotSupportedException {
+        Employee cloned = (Employee) super.clone();
+        cloned.address = (Address) address.clone(); // Deep clone
+        return cloned;
+    }
+}
+
+// Using serialization
+public static <T> T deepCopy(T object) {
+    try {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ObjectOutputStream oos = new ObjectOutputStream(baos);
+        oos.writeObject(object);
+        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+        ObjectInputStream ois = new ObjectInputStream(bais);
+        return (T) ois.readObject();
+    } catch (Exception e) {
+        e.printStackTrace();
+        return null;
+    }
+}
+
+// Using copy libraries (Gson)
+Gson gson = new Gson();
+Employee deepCopy = gson.fromJson(gson.toJson(original), Employee.class);
+```
+
+Spring Core & Dependency Injection
+
+16. What is the Inversion of Control (IoC) principle, and how does the Spring Container implement it?
+
+Answer:
+Inversion of Control (IoC): Design principle where the control of object creation and lifecycle is inverted from the application to the container.
+
+Traditional Approach:
+
+```java
+// Tight coupling - application creates dependencies
+class Service {
+    private Repository repository;
+    public Service() {
+        repository = new Repository(); // Hardcoded instantiation
+    }
+}
+```
+
+IoC Approach:
+
+```java
+// Loose coupling - container manages dependencies
+class Service {
+    private Repository repository;
+    public Service(Repository repository) { // Constructor injection
+        this.repository = repository;
+    }
+}
+```
+
+Spring Container Implementation:
+
+1. BeanFactory: Basic IoC container
+2. ApplicationContext: Advanced container with enterprise services
+
+Core Components:
+
+· Configuration: XML, Java annotations, or Java config classes
+· Bean Definition: Metadata about beans (scope, lifecycle, dependencies)
+· Dependency Injection: Constructor, setter, or field injection
+· Bean Lifecycle: Creation, initialization, usage, destruction
+
+Types of IoC:
+
+1. Setter Injection: Via setter methods
+2. Constructor Injection: Via constructors (preferred)
+3. Field Injection: Direct field assignment (not recommended)
+
+17. Differentiate between Constructor Injection and Setter Injection. Which one is preferred and why?
+
+Answer:
+
+Feature Constructor Injection Setter Injection
+Mandatory Dependencies Enforced Not enforced
+Immutability Supports (final fields) No
+Testing Easier (clear dependencies) More challenging (setters required)
+Circular Dependencies Can cause issues Can resolve with @Lazy
+Over-injection Harder to have too many parameters Easier to add unnecessary dependencies
+Validation Ensures bean is fully initialized Bean may be partially initialized
+
+Constructor Injection (Recommended):
+
+```java
+@Component
+public class UserService {
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+    
+    public UserService(UserRepository userRepository, EmailService emailService) {
+        this.userRepository = userRepository; // Mandatory dependencies
+        this.emailService = emailService;
+    }
+}
+```
+
+Setter Injection:
+
+```java
+@Component
+public class UserService {
+    private UserRepository userRepository;
+    private EmailService emailService;
+    
+    @Autowired // Optional dependency
+    public void setEmailService(EmailService emailService) {
+        this.emailService = emailService;
+    }
+    
+    public void setUserRepository(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+}
+```
+
+Why Constructor Injection is Preferred:
+
+1. Immutability: Fields can be final
+2. Clarity: Clear which dependencies are required
+3. Testing: Easy to instantiate with mock dependencies
+4. Safety: Avoids null pointer exceptions
+5. Best Practice: Spring officially recommends constructor injection
+
+18. Explain the Bean lifecycle phases in a Spring container.
+
+Answer:
+Spring Bean lifecycle consists of the following phases:
+
+1. Instantiation: Container creates bean instance using constructor
+2. Property Population: Setter methods are called (Dependency Injection)
+3. BeanNameAware: setBeanName() called if bean implements BeanNameAware
+4. BeanFactoryAware: setBeanFactory() called if implements BeanFactoryAware
+5. ApplicationContextAware: setApplicationContext() called if implements ApplicationContextAware
+6. Pre-Initialization: BeanPostProcessor.postProcessBeforeInitialization() called
+7. Initialization:
+   · @PostConstruct method called
+   · InitializingBean.afterPropertiesSet() called
+   · Custom init-method called
+8. Post-Initialization: BeanPostProcessor.postProcessAfterInitialization() called
+9. Ready to Use: Bean fully initialized and ready for use
+10. Destruction:
+    · @PreDestroy method called
+    · DisposableBean.destroy() called
+    · Custom destroy-method called
+
+Example:
+
+```java
+@Component
+public class LifecycleBean implements BeanNameAware, BeanFactoryAware, ApplicationContextAware, 
+                                      InitializingBean, DisposableBean {
+    
+    @PostConstruct
+    public void init() {
+        System.out.println("PostConstruct called");
+    }
+    
+    @PreDestroy
+    public void destroyMethod() {
+        System.out.println("PreDestroy called");
+    }
+    
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        System.out.println("InitializingBean called");
+    }
+    
+    @Override
+    public void destroy() throws Exception {
+        System.out.println("DisposableBean called");
+    }
+    
+    @Override
+    public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+        System.out.println("BeanFactoryAware called");
+    }
+    
+    @Override
+    public void setBeanName(String name) {
+        System.out.println("BeanNameAware called");
+    }
+    
+    @Override
+    public void setApplicationContext(ApplicationContext context) throws BeansException {
+        System.out.println("ApplicationContextAware called");
+    }
+}
+```
+
+19. What are the different Spring Bean scopes? How does a Singleton bean interact safely with a Prototype bean?
+
+Answer:
+
+Scope Description Usage
+Singleton One instance per container (default) Stateless beans
+Prototype New instance each time requested Stateful beans
+Request One instance per HTTP request Web applications
+Session One instance per HTTP session Web applications
+Application One instance per ServletContext Web applications
+WebSocket One instance per WebSocket WebSocket applications
+
+Singleton + Prototype Interaction Problem:
+When a singleton bean has a prototype bean as dependency, the prototype bean is only created once during singleton initialization.
+
+Solution 1: Method Injection with @Lookup
+
+```java
+@Component
+public class SingletonBean {
+    
+    @Lookup
+    public PrototypeBean getPrototypeBean() {
+        return null; // Spring will override this method
+    }
+    
+    public void doSomething() {
+        PrototypeBean bean = getPrototypeBean(); // New instance each call
+        bean.process();
+    }
+}
+```
+
+Solution 2: ApplicationContextAware
+
+```java
+@Component
+public class SingletonBean implements ApplicationContextAware {
+    
+    private ApplicationContext applicationContext;
+    
+    @Override
+    public void setApplicationContext(ApplicationContext context) {
+        this.applicationContext = context;
+    }
+    
+    public void doSomething() {
+        PrototypeBean bean = applicationContext.getBean(PrototypeBean.class);
+        bean.process();
+    }
+}
+```
+
+Solution 3: ObjectFactory/Provider
+
+```java
+@Component
+public class SingletonBean {
+    
+    @Autowired
+    private ObjectFactory<PrototypeBean> prototypeFactory;
+    
+    public void doSomething() {
+        PrototypeBean bean = prototypeFactory.getObject();
+        bean.process();
+    }
+}
+```
+
+20. What is the purpose of the @Autowired annotation? How does it resolve ambiguity if multiple beans of the same type exist?
+
+Answer:
+@Autowired enables dependency injection by automatically wiring beans based on type.
+
+Resolution Strategies:
+
+1. @Primary: Marks one bean as primary candidate
+2. @Qualifier: Specifies bean name to inject
+3. Field/Parameter Name: Spring uses name as fallback
+
+Example:
+
+```java
+// Multiple beans of same type
+@Configuration
+public class AppConfig {
+    @Bean
+    public DatabaseService mysqlService() {
+        return new MySQLService();
+    }
+    
+    @Bean
+    @Primary
+    public DatabaseService postgresService() {
+        return new PostgresService(); // Primary bean
+    }
+    
+    @Bean
+    @Qualifier("oracle")
+    public DatabaseService oracleService() {
+        return new OracleService();
+    }
+}
+
+// Resolving ambiguity
+@Service
+public class UserService {
+    
+    // 1. Using @Primary (will use postgresService)
+    @Autowired
+    private DatabaseService primaryService;
+    
+    // 2. Using @Qualifier
+    @Autowired
+    @Qualifier("oracle")
+    private DatabaseService oracleService;
+    
+    // 3. Using field name (injects mysqlService)
+    @Autowired
+    private DatabaseService mysqlService;
+    
+    // 4. Using constructor with @Qualifier
+    private DatabaseService selectedService;
+    
+    public UserService(@Qualifier("mysqlService") DatabaseService service) {
+        this.selectedService = service;
+    }
+}
+```
+
+@Autowired Rules:
+
+· Can be applied to constructors, methods, parameters, fields
+· required = false makes dependency optional
+· Single constructor doesn't require @Autowired
+· Works with ApplicationContext.getBean()
+
+21. Explain the difference between @Component, @Service, @Repository, and @Controller.
+
+Answer:
+All are stereotypes for declaring Spring-managed beans with different purposes:
+
+Annotation Layer Purpose Exception Translation
+@Component Generic Basic stereotype for any component No
+@Service Service Business logic/service layer No
+@Repository Persistence Data access/DAO layer Yes (PersistenceExceptionTranslationPostProcessor)
+@Controller Web Web layer/Controller No
+
+Example:
+
+```java
+// Generic component
+@Component
+public class UtilityHelper {
+    // Generic helper class
+}
+
+// Service layer - business logic
+@Service
+public class UserService {
+    @Autowired
+    private UserRepository userRepository;
+    
+    public User getUser(Long id) {
+        return userRepository.findById(id);
+    }
+}
+
+// Repository - data access
+@Repository
+public class UserRepository {
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    public User findById(Long id) {
+        // Spring translates persistence exceptions automatically
+        return entityManager.find(User.class, id);
+    }
+}
+
+// Controller - web layer
+@Controller
+public class UserController {
+    @Autowired
+    private UserService userService;
+    
+    @GetMapping("/users/{id}")
+    @ResponseBody
+    public User getUser(@PathVariable Long id) {
+        return userService.getUser(id);
+    }
+}
+```
+
+22. How does Spring's Aspect-Oriented Programming (AOP) work? Define Advice, Pointcut, and JoinPoint.
+
+Answer:
+AOP enables separation of cross-cutting concerns (logging, security, transactions) from business logic.
+
+Core Concepts:
+
+Term Definition Example
+Aspect Module containing cross-cutting concerns @Aspect class
+Advice Action to be taken at joinpoint @Before, @After, @Around
+Pointcut Expression matching joinpoints @Pointcut("execution(* com.example.*.*(..))")
+JoinPoint Point during execution (method call, exception) Method execution
+Weaving Integrating advice with target code Compile-time, load-time, runtime
+
+Example:
+
+```java
+@Aspect
+@Component
+public class LoggingAspect {
+    
+    // Pointcut definition
+    @Pointcut("execution(* com.example.service.*.*(..))")
+    public void serviceLayer() {}
+    
+    // Before advice
+    @Before("serviceLayer()")
+    public void beforeServiceCall(JoinPoint joinPoint) {
+        System.out.println("Before: " + joinPoint.getSignature().getName());
+    }
+    
+    // After returning advice
+    @AfterReturning(pointcut = "serviceLayer()", returning = "result")
+    public void afterReturning(JoinPoint joinPoint, Object result) {
+        System.out.println("Returned: " + result);
+    }
+    
+    // Around advice - most powerful
+    @Around("serviceLayer()")
+    public Object aroundService(ProceedingJoinPoint joinPoint) throws Throwable {
+        long start = System.currentTimeMillis();
+        try {
+            Object result = joinPoint.proceed(); // Execute method
+            long duration = System.currentTimeMillis() - start;
+            System.out.println("Time taken: " + duration + "ms");
+            return result;
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
+            throw e;
+        }
+    }
+}
+```
+
+Spring AOP vs AspectJ:
+
+· Spring AOP: Proxy-based, runtime weaving, method interception only
+· AspectJ: Compile-time/load-time weaving, all joinpoints
+
+Spring Boot Architecture
+
+23. What happens under the hood when you annotate a class with @SpringBootApplication?
+
+Answer:
+@SpringBootApplication is a convenience annotation that combines three annotations:
+
+```java
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+Under the Hood:
+
+1. @SpringBootConfiguration: Equivalent to @Configuration
+   · Marks class as Spring configuration
+   · Allows bean definitions
+2. @EnableAutoConfiguration:
+   · Triggers auto-configuration based on classpath
+   · Reads spring.factories files
+   · Configures beans based on dependencies
+3. @ComponentScan:
+   · Scans package and sub-packages for components
+   · Default: current package + sub-packages
+   · Discovers @Component, @Service, etc.
+
+Auto-Configuration Process:
+
+```
+1. Start SpringApplication.run()
+2. Create ApplicationContext
+3. Process @EnableAutoConfiguration
+4. Load spring.factories from classpath
+5. Evaluate @Conditional annotations
+6. Create beans based on conditions
+7. Start embedded web server (if applicable)
+8. Execute CommandLineRunner/ApplicationRunner
+```
+
+Example of Auto-Configuration:
+
+```java
+// Spring Boot sees spring-web on classpath, auto-configures:
+@ConditionalOnClass(DispatcherServlet.class)
+@AutoConfigureAfter(ServletWebServerFactoryAutoConfiguration.class)
+public class DispatcherServletAutoConfiguration {
+    // Configures DispatcherServlet, HandlerMapping, etc.
+}
+```
+
+24. How does Spring Boot's Auto-configuration work? How can you exclude a specific auto-configuration?
+
+Answer:
+Spring Boot Auto-configuration:
+
+1. Scans META-INF/spring.factories for EnableAutoConfiguration entries
+2. Evaluates @Conditional annotations
+3. Creates beans when conditions are met
+4. Applies properties from application.properties/yml
+
+Excluding Auto-Configurations:
+
+Method 1: Using @SpringBootApplication exclude attribute
+
+```java
+@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
+public class Application {
+    // Main method
+}
+```
+
+Method 2: Using @EnableAutoConfiguration exclude
+
+```java
+@EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class})
+public class Application {
+    // Main method
+}
+```
+
+Method 3: Using properties file
+
+```properties
+spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+```
+
+Method 4: Programmatic exclusion
+
+```java
+@Configuration
+public class CustomConfig {
+    @Bean
+    public FilterRegistrationBean<MyFilter> disableAutoConfig() {
+        // Custom configuration
+    }
+}
+```
+
+Common Auto-Configurations:
+
+· DataSourceAutoConfiguration - Database connections
+· JpaRepositoriesAutoConfiguration - JPA repositories
+· WebMvcAutoConfiguration - MVC configuration
+· SecurityAutoConfiguration - Spring Security
+
+25. What is the purpose of the application.properties or application.yml file? How do you profile environments?
+
+Answer:
+Configuration files provide externalized configuration for Spring Boot applications.
+
+Purpose:
+
+· Configure server settings (port, context path)
+· Define database connections
+· Set logging levels
+· Configure third-party integrations
+· Environment-specific settings
+
+Application Properties Example:
+
+```properties
+# Server Configuration
+server.port=8080
+server.servlet.context-path=/api
+
+# Database Configuration
+spring.datasource.url=jdbc:mysql://localhost:3306/mydb
+spring.datasource.username=root
+spring.datasource.password=secret
+
+# JPA Configuration
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+# Logging
+logging.level.com.example=DEBUG
+```
+
+Application YML Example:
+
+```yaml
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/mydb
+    username: root
+    password: secret
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+logging:
+  level:
+    com.example: DEBUG
+```
+
+Profiles:
+
+· Profile-specific files: application-{profile}.properties
+· Set active profile: spring.profiles.active=dev,prod
+· Activate via:
+  · Command line: --spring.profiles.active=dev
+  · Environment variable: SPRING_PROFILES_ACTIVE=dev
+  · @Profile annotation on beans
+  · Programmatic: SpringApplication.setAdditionalProfiles("dev")
+
+Example:
+
+```properties
+# application-dev.properties
+server.port=8081
+spring.datasource.url=jdbc:h2:mem:testdb
+
+# application-prod.properties
+server.port=8080
+spring.datasource.url=jdbc:mysql://prod-db:3306/mydb
+```
+
+```java
+@Configuration
+@Profile("dev")
+public class DevConfig {
+    @Bean
+    public DataSource devDataSource() {
+        // Dev environment datasource
+    }
+}
+
+@Configuration
+@Profile("prod")
+public class ProdConfig {
+    @Bean
+    public DataSource prodDataSource() {
+        // Production environment datasource
+    }
+}
+```
+
+26. How do you handle global exceptions in Spring Boot using @ControllerAdvice and @ExceptionHandler?
+
+Answer:
+@ControllerAdvice provides centralized exception handling across the application.
+
+Implementation:
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    // Handle specific exceptions
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
+        ErrorResponse error = ErrorResponse.builder()
+            .status(HttpStatus.NOT_FOUND.value())
+            .message(ex.getMessage())
+            .timestamp(Instant.now())
+            .build();
+        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+    }
+    
+    // Handle validation errors
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        List<String> errors = ex.getBindingResult()
+            .getFieldErrors()
+            .stream()
+            .map(FieldError::getDefaultMessage)
+            .collect(Collectors.toList());
+            
+        ErrorResponse error = ErrorResponse.builder()
+            .status(HttpStatus.BAD_REQUEST.value())
+            .message("Validation failed")
+            .timestamp(Instant.now())
+            .details(errors)
+            .build();
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+    
+    // Handle all other exceptions
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGlobalException(Exception ex) {
+        ErrorResponse error = ErrorResponse.builder()
+            .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+            .message("An unexpected error occurred")
+            .timestamp(Instant.now())
+            .build();
+        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+}
+
+// Custom exception
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
+
+// Error response DTO
+@Data
+@Builder
+public class ErrorResponse {
+    private int status;
+    private String message;
+    private Instant timestamp;
+    private List<String> details;
+}
+```
+
+27. What is the role of Spring Boot Actuator? Name three production-ready endpoints it exposes.
+
+Answer:
+Spring Boot Actuator provides production-ready monitoring and management endpoints.
+
+Core Features:
+
+· Health checks and readiness probes
+· Metrics and monitoring
+· Application information
+· Environment configuration
+· Logging management
+· Thread and memory monitoring
+
+Common Endpoints:
+
+Endpoint Purpose Sensitive
+/health Application health status No
+/info Application information No
+/metrics Performance metrics Yes
+/env Environment properties Yes
+/loggers Logging configuration Yes
+/threaddump Thread information Yes
+/heapdump Heap memory dump Yes
+/shutdown Graceful shutdown Yes
+/liquibase Liquibase migrations Yes
+/scheduledtasks Scheduled tasks Yes
+
+Configuration:
+
+```properties
+# Enable endpoints
+management.endpoints.web.exposure.include=health,info,metrics,env
+
+# Disable sensitive endpoints
+management.endpoint.shutdown.enabled=false
+
+# Custom health indicator
+management.endpoint.health.show-details=always
+
+# Change endpoint base path
+management.endpoints.web.base-path=/monitoring
+```
+
+Custom Health Indicator:
+
+```java
+@Component
+public class CustomHealthIndicator implements HealthIndicator {
+    @Override
+    public Health health() {
+        if (isDatabaseAvailable()) {
+            return Health.up()
+                .withDetail("database", "Available")
+                .withDetail("timestamp", Instant.now())
+                .build();
+        } else {
+            return Health.down()
+                .withDetail("database", "Unavailable")
+                .withDetail("error", "Connection failed")
+                .build();
+        }
+    }
+    
+    private boolean isDatabaseAvailable() {
+        // Check database connectivity
+        return true;
+    }
+}
+```
+
+28. How do you configure custom properties in Spring Boot using @ConfigurationProperties?
+
+Answer:
+@ConfigurationProperties provides type-safe configuration binding.
+
+Method 1: Using @ConfigurationProperties on class
+
+```java
+@Component
+@ConfigurationProperties(prefix = "app")
+public class AppProperties {
+    private String name;
+    private String version;
+    private Map<String, String> features = new HashMap<>();
+    private List<String> servers = new ArrayList<>();
+    private DatabaseConfig database = new DatabaseConfig();
+    
+    // Getters and setters (or @Data annotation)
+    
+    @Data
+    public static class DatabaseConfig {
+        private String url;
+        private String username;
+        private String password;
+        private ConnectionPool pool = new ConnectionPool();
+    }
+    
+    @Data
+    public static class ConnectionPool {
+        private int maxConnections = 10;
+        private int timeout = 30;
+    }
+}
+```
+
+Method 2: Using @ConfigurationProperties in configuration class
+
+```java
+@Configuration
+public class AppConfig {
+    
+    @Bean
+    @ConfigurationProperties(prefix = "app")
+    public AppProperties appProperties() {
+        return new AppProperties();
+    }
+}
+```
+
+Method 3: Using @ConfigurationPropertiesScan
+
+```java
+@SpringBootApplication
+@ConfigurationPropertiesScan
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+Application Properties:
+
+```properties
+app.name=MyApplication
+app.version=1.0.0
+app.features.caching=true
+app.features.logging=false
+app.servers[0]=server1
+app.servers[1]=server2
+app.database.url=jdbc:mysql://localhost:3306/mydb
+app.database.username=root
+app.database.password=secret
+app.database.pool.max-connections=20
+app.database.pool.timeout=60
+```
+
+Validation with JSR-303:
+
+```java
+@ConfigurationProperties(prefix = "app")
+@Validated
+public class AppProperties {
+    @NotBlank
+    private String name;
+    
+    @Min(1)
+    private int version;
+    
+    @Valid
+    private DatabaseConfig database;
+}
+```
+
+29. What is the difference between Embedded Servers (like Tomcat) and External Servers in Spring Boot deployment?
+
+Answer:
+
+Aspect Embedded Server External Server
+Deployment JAR with embedded container WAR deployed to container
+Startup java -jar app.jar Deploy to Tomcat/WebLogic
+Configuration Spring Boot properties Server-specific config
+Management Application controls lifecycle Container manages lifecycle
+Updates Restart entire app Hot deploy (limited)
+Performance Slightly lower overhead Better for heavy loads
+Flexibility Easy to switch containers Locked to container
+DevOps Cloud-native, container-ready Traditional deployment
+
+Example:
+
+```java
+// Embedded Tomcat (default)
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+        // Tomcat starts automatically
+    }
+}
+
+// Using Undertow
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-undertow</artifactId>
+</dependency>
+// Exclude Tomcat dependency
+
+// External Server (WAR)
+@SpringBootApplication
+public class Application extends SpringBootServletInitializer {
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
+        return application.sources(Application.class);
+    }
+}
+```
+
+Embedded Server Configuration:
+
+```properties
+# Tomcat specific
+server.tomcat.max-threads=200
+server.tomcat.max-connections=8192
+server.tomcat.connection-timeout=20000
+
+# Jetty specific
+server.jetty.max-threads=200
+```
+
+Spring Data JPA & Hibernate
+
+30. What is the difference between Hibernate and Spring Data JPA?
+
+Answer:
+
+Aspect Hibernate Spring Data JPA
+Role ORM (Object-Relational Mapping) framework Abstraction over JPA implementations
+Implementation Actual JPA implementation Repository abstraction layer
+Purpose Maps objects to database tables Simplifies data access with repositories
+Features Lazy loading, caching, criteria API Automatic CRUD, pagination, query methods
+Dependencies Hibernate ORM library Spring Data JPA dependency
+Configuration hibernate.cfg.xml/EntityManager Spring configuration
+
+Hibernate Core Features:
+
+```java
+// Raw Hibernate
+SessionFactory factory = new Configuration().configure().buildSessionFactory();
+Session session = factory.openSession();
+Transaction tx = session.beginTransaction();
+User user = session.get(User.class, 1L);
+tx.commit();
+session.close();
+```
+
+Spring Data JPA Abstraction:
+
+```java
+// Spring Data JPA Repository
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    // Automatic CRUD methods
+    List<User> findByNameContainingIgnoreCase(String name); // Query by method name
+    Optional<User> findByEmail(String email);
+    
+    // Custom query
+    @Query("SELECT u FROM User u WHERE u.age > :age")
+    List<User> findUsersAboveAge(@Param("age") int age);
+    
+    // Native query
+    @Query(value = "SELECT * FROM users u WHERE u.age > ?1", nativeQuery = true)
+    List<User> findUsersAboveAgeNative(int age);
+}
+```
+
+Integration:
+
+```xml
+<!-- Spring Boot Starter Data JPA includes Hibernate -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+    <!-- Hibernate Core, Hibernate EntityManager, Spring Data JPA -->
+</dependency>
+```
+
+31. Explain the "N+1 Select Problem" in Hibernate. How do you resolve it?
+
+Answer:
+The N+1 problem occurs when fetching entities with associations where:
+
+· 1 query fetches the parent entities
+· N queries fetch the child associations for each parent
+
+Example of N+1 Problem:
+
+```java
+// Entity
+@Entity
+public class Post {
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    private List<Comment> comments;
+}
+
+// Query - Causes N+1
+List<Post> posts = entityManager
+    .createQuery("SELECT p FROM Post p")
+    .getResultList();
+
+for (Post post : posts) { // For each post
+    post.getComments().size(); // Triggers SELECT query for comments
+}
+// Result: 1 query for posts + N queries for comments
+```
+
+Solutions:
+
+1. JOIN FETCH
+
+```java
+@Query("SELECT p FROM Post p JOIN FETCH p.comments")
+List<Post> findAllWithComments();
+
+// Or in HQL
+List<Post> posts = entityManager
+    .createQuery("SELECT p FROM Post p JOIN FETCH p.comments")
+    .getResultList();
+```
+
+2. EntityGraph
+
+```java
+// Named EntityGraph
+@Entity
+@NamedEntityGraph(name = "Post.comments", attributeNodes = @NamedAttributeNode("comments"))
+public class Post {
+    // ...
+}
+
+// Using EntityGraph
+@EntityGraph(value = "Post.comments")
+@Query("SELECT p FROM Post p")
+List<Post> findAllWithComments();
+
+// Dynamic EntityGraph
+EntityGraph<Post> graph = entityManager.createEntityGraph(Post.class);
+graph.addAttributeNodes("comments");
+Map<String, Object> hints = new HashMap<>();
+hints.put("javax.persistence.fetchgraph", graph);
+List<Post> posts = entityManager
+    .createQuery("SELECT p FROM Post p")
+    .setHint("javax.persistence.fetchgraph", graph)
+    .getResultList();
+```
+
+3. Batch Fetching
+
+```properties
+# application.properties
+spring.jpa.properties.hibernate.default_batch_fetch_size=10
+```
+
+```java
+@Entity
+public class Post {
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    @BatchSize(size = 10)
+    private List<Comment> comments;
+}
+```
+
+4. Subselect
+
+```java
+@Entity
+public class Post {
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    @Fetch(FetchMode.SUBSELECT)
+    private List<Comment> comments;
+}
+```
+
+32. What is the difference between FetchType.LAZY and FetchType.EAGER?
+
+Answer:
+
+Feature LAZY EAGER
+When Loaded Loaded on access Loaded immediately with parent
+Performance Better initial fetch Poor initial fetch (cartesian product)
+Memory Usage Less memory initially More memory upfront
+N+1 Problem Can cause N+1 Might cause larger N+1
+Default For @OneToMany, @ManyToMany @ManyToOne, @OneToOne
+Usage Preferred generally Only if always needed
+
+Example:
+
+```java
+@Entity
+public class Post {
+    @Id
+    private Long id;
+    private String title;
+    
+    // LAZY - Loaded when accessed
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    private List<Comment> comments;
+    
+    // EAGER - Loaded immediately
+    @ManyToOne(fetch = FetchType.EAGER)
+    private Author author;
+}
+
+// LAZY behavior
+Post post = session.get(Post.class, 1L);
+// Only Post fetched, comments not loaded yet
+List<Comment> comments = post.getComments(); // Now comments are loaded
+
+// EAGER behavior
+Post post = session.get(Post.class, 1L);
+// Post and Author both fetched in single query (JOIN)
+```
+
+When to Use Each:
+
+· LAZY: Most of the time, especially for large collections
+· EAGER: Only when you always need the association
+· Best Practice: Default to LAZY, use JOIN FETCH when needed
+
+33. How do you implement Pagination and Sorting using Spring Data JPA?
+
+Answer:
+Spring Data JPA provides built-in pagination and sorting support.
+
+1. Using Pageable Interface:
+
+```java
+// Repository method
+public interface UserRepository extends JpaRepository<User, Long> {
+    Page<User> findByDepartment(String department, Pageable pageable);
+    Slice<User> findUsersByAgeGreaterThan(int age, Pageable pageable);
+}
+
+// Usage
+Pageable pageable = PageRequest.of(
+    page,                      // Page number (0-indexed)
+    size,                      // Page size
+    Sort.by(Sort.Direction.DESC, "name") // Sorting
+);
+
+Page<User> userPage = userRepository.findByDepartment("IT", pageable);
+List<User> users = userPage.getContent();
+int totalPages = userPage.getTotalPages();
+long totalElements = userPage.getTotalElements();
+boolean isFirst = userPage.isFirst();
+boolean isLast = userPage.isLast();
+```
+
+2. Using Sort Object:
+
+```java
+// Sorting only (no pagination)
+Sort sort = Sort.by("name").descending()
+    .and(Sort.by("age").ascending());
+List<User> users = userRepository.findAll(sort);
+
+// Custom Sort with pagination
+Pageable pageable = PageRequest.of(0, 10, Sort.by(
+    Sort.Order.desc("createdDate"),
+    Sort.Order.asc("id")
+));
+```
+
+3. Using Native Queries:
+
+```java
+@Query(value = "SELECT * FROM users u WHERE u.department = ?1",
+       countQuery = "SELECT count(*) FROM users u WHERE u.department = ?1",
+       nativeQuery = true)
+Page<User> findByDepartmentNative(String department, Pageable pageable);
+```
+
+4. Slicing (for large datasets without total count):
+
+```java
+public interface UserRepository extends JpaRepository<User, Long> {
+    Slice<User> findByDepartment(String department, Pageable pageable);
+}
+
+// Slice doesn't query total count, better performance for large datasets
+Slice<User> userSlice = userRepository.findByDepartment("IT", pageable);
+boolean hasNext = userSlice.hasNext();
+boolean hasPrevious = userSlice.hasPrevious();
+```
+
+5. Custom Pagination Query:
+
+```java
+public class CustomUserRepository {
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    public Page<User> findUsersCustom(String search, Pageable pageable) {
+        // Build query
+        String query = "SELECT u FROM User u WHERE LOWER(u.name) LIKE LOWER(:search)";
+        TypedQuery<User> typedQuery = entityManager.createQuery(query, User.class);
+        typedQuery.setParameter("search", "%" + search + "%");
+        
+        // Count query
+        String countQuery = "SELECT COUNT(u) FROM User u WHERE LOWER(u.name) LIKE LOWER(:search)";
+        TypedQuery<Long> countTypedQuery = entityManager.createQuery(countQuery, Long.class);
+        countTypedQuery.setParameter("search", "%" + search + "%");
+        
+        // Apply pagination
+        typedQuery.setFirstResult((int) pageable.getOffset());
+        typedQuery.setMaxResults(pageable.getPageSize());
+        
+        return new PageImpl<>(typedQuery.getResultList(), 
+                              pageable, 
+                              countTypedQuery.getSingleResult());
+    }
+}
+```
+
+34. What is the difference between Session.get() and Session.load() (or findById() vs getReferenceById())?
+
+Answer:
+
+Feature get() / findById() load() / getReferenceById()
+Loading Immediately loads entity Returns proxy, loads lazily
+Database Hit Always hits database May not hit database until needed
+Performance Slower (always DB access) Faster (proxy creation)
+Null Return Returns null if not found Throws EntityNotFoundException if accessed
+Caching Checks cache first then DB Checks cache, then creates proxy
+Use Case When you need data immediately When you need reference for association
+
+Example:
+
+```java
+// Session.get() vs Session.load()
+User user1 = session.get(User.class, 1L);
+// Immediately executes: SELECT * FROM users WHERE id = 1
+
+User user2 = session.load(User.class, 2L);
+// No SQL executed, returns proxy object
+String name = user2.getName();
+// Now SQL is executed to load the data
+
+// Spring Data JPA equivalents
+public interface UserRepository extends JpaRepository<User, Long> {
+    // findById() - equivalent to Session.get()
+    Optional<User> findById(Long id);
+    
+    // getReferenceById() - equivalent to Session.load()
+    User getReferenceById(Long id);
+}
+
+// Usage
+// findById()
+User user1 = userRepository.findById(1L).orElse(null);
+// Executes SELECT immediately
+
+// getReferenceById()
+User user2 = userRepository.getReferenceById(1L);
+// No SELECT executed, returns proxy
+String name = user2.getName();
+// SELECT executed on access
+```
+
+When to Use:
+
+· Use findById() when you need to check existence
+· Use getReferenceById() when:
+  · Setting associations to avoid unnecessary SELECTs
+  · Creating new entities with references
+  · You're sure the entity exists
+
+35. Explain First-level cache vs Second-level cache in Hibernate.
+
+Answer:
+
+Feature First-Level Cache Second-Level Cache
+Scope Session/EntityManager SessionFactory/EntityManagerFactory
+Visibility Within same session only Across all sessions
+Enabled By Default Yes No
+Cache Type Transactional/Application SessionFactory/Cluster
+Eviction Automatic at session end Configurable
+Performance Fast but limited Slower but broader
+Store Memory only Memory/disk/external
+
+First-Level Cache:
+
+```java
+Session session = sessionFactory.openSession();
+Transaction tx = session.beginTransaction();
+
+User user1 = session.get(User.class, 1L);
+// SELECT executed once
+
+User user2 = session.get(User.class, 1L);
+// Returns from cache, no SELECT executed
+
+session.evict(user1); // Remove from cache
+User user3 = session.get(User.class, 1L);
+// SELECT executed again
+
+tx.commit();
+session.close(); // Cache cleared
+```
+
+Second-Level Cache Configuration:
+
+```properties
+# Enable second-level cache
+spring.jpa.properties.hibernate.cache.use_second_level_cache=true
+
+# Cache provider (EHCache, Hazelcast, Infinispan)
+spring.jpa.properties.hibernate.cache.region.factory_class=org.hibernate.cache.ehcache.EhCacheRegionFactory
+
+# Enable query cache
+spring.jpa.properties.hibernate.cache.use_query_cache=true
+```
+
+Entity Annotation:
+
+```java
+@Entity
+@Cacheable
+@org.hibernate.annotations.Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
+public class User {
+    @Id
+    private Long id;
+    private String name;
+    private String email;
+}
+```
+
+Cache Strategies:
+
+Strategy Description Use Case
+READ_ONLY Immutable data Reference data
+NONSTRICT_READ_WRITE Rarely updated Lookup tables
+READ_WRITE Frequently updated Transactional data
+TRANSACTIONAL JTA transactions Distributed transactions
+
+Cache Regions:
+
+```java
+// Custom cache region
+@org.hibernate.annotations.Cache(usage = CacheConcurrencyStrategy.READ_WRITE, 
+                                   region = "userCache")
+public class User {
+    // ...
+}
+```
+
+36. How do you handle transaction management in Spring Boot using the @Transactional annotation? What is propagation?
+
+Answer:
+@Transactional provides declarative transaction management.
+
+Key Attributes:
+
+```java
+@Transactional(
+    propagation = Propagation.REQUIRED,    // Default
+    isolation = Isolation.DEFAULT,
+    timeout = 30,
+    readOnly = false,
+    rollbackFor = Exception.class,
+    noRollbackFor = RuntimeException.class
+)
+```
+
+Propagation Types:
+
+Propagation Description
+REQUIRED Join existing tx or create new
+REQUIRES_NEW Suspend existing, create new
+MANDATORY Require existing tx, throw if none
+NESTED Execute nested transaction
+SUPPORTS Join if exists, else non-tx
+NOT_SUPPORTED Execute non-transactionally
+NEVER Throw if transaction exists
+
+Example:
+
+```java
+@Service
+public class UserService {
+    
+    // Default propagation (REQUIRED)
+    @Transactional
+    public void createUser(User user) {
+        userRepository.save(user);
+        // Throws exception, everything rolls back
+    }
+    
+    // REQUIRES_NEW - always new transaction
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void sendNotification(User user) {
+        // Always in new transaction
+        notificationService.send(user);
+    }
+    
+    // NESTED - savepoint for partial rollback
+    @Transactional(propagation = Propagation.NESTED)
+    public void processUser(User user) {
+        userRepository.save(user);
+        try {
+            userRepository.process(); // Nested transaction
+        } catch (Exception e) {
+            // Outer transaction can continue
+        }
+    }
+    
+    // Read-only optimization
+    @Transactional(readOnly = true)
+    public User findUser(Long id) {
+        return userRepository.findById(id).orElse(null);
+    }
+    
+    // Transactional with timeout
+    @Transactional(timeout = 10)
+    public void longProcess() {
+        // Must complete within 10 seconds
+    }
+    
+    // Rollback for specific exceptions
+    @Transactional(rollbackFor = SQLException.class)
+    public void saveData() throws SQLException {
+        // Rolls back on SQLException but not RuntimeException
+    }
+}
+```
+
+Best Practices:
+
+1. Apply to service layer methods, not repository
+2. Keep transactions short-lived
+3. Use readOnly for query methods
+4. Avoid calling @Transactional methods within same class
+5. Be careful with lazy loading outside transaction
+
+37. What is the difference between Optimistic Locking and Pessimistic Locking in JPA?
+
+Answer:
+
+Optimistic Locking:
+
+· Assumes conflicts are rare
+· Uses version number or timestamp
+· Checks version on update
+· Throws OptimisticLockException on conflict
+
+Pessimistic Locking:
+
+· Assumes conflicts are frequent
+· Locks record during transaction
+· Other transactions block
+· Higher overhead
+· Used for critical data
+
+Optimistic Locking Example:
+
+```java
+@Entity
+public class Product {
+    @Id
+    private Long id;
+    
+    @Version
+    private Long version; // Incremented on each update
+    
+    private String name;
+    private int quantity;
+}
+
+// Usage - handles conflict
+@Transactional
+public void updateProduct(Long id, int quantity) {
+    Product product = productRepository.findById(id).orElseThrow();
+    product.setQuantity(quantity);
+    // When saving, version check prevents stale updates
+    productRepository.save(product);
+}
+
+// Handling OptimisticLockException
+try {
+    updateProduct(1L, 100);
+} catch (OptimisticLockException e) {
+    // Retry or notify user
+}
+```
+
+Pessimistic Locking Example:
+
+```java
+@Repository
+public interface ProductRepository extends JpaRepository<Product, Long> {
+    
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Product p WHERE p.id = :id")
+    Optional<Product> findByIdWithPessimisticLock(@Param("id") Long id);
+}
+
+// Usage
+@Transactional
+public void updateProductWithLock(Long id, int quantity) {
+    Product product = productRepository.findByIdWithPessimisticLock(id).orElseThrow();
+    product.setQuantity(quantity);
+    productRepository.save(product);
+    // Lock released when transaction commits
+}
+```
+
+Lock Types:
+
+Lock Mode Description
+PESSIMISTIC_READ Shared lock, others can read but not write
+PESSIMISTIC_WRITE Exclusive lock, others can't read or write
+PESSIMISTIC_FORCE_INCREMENT Pessimistic write with version increment
+
+38. How do you execute native SQL queries instead of JPQL in a Spring Data Repository?
+
+Answer:
+Use @Query with nativeQuery = true attribute.
+
+1. Native Query in Repository:
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    
+    // Simple native query
+    @Query(value = "SELECT * FROM users WHERE age > ?1", nativeQuery = true)
+    List<User> findUsersOlderThan(int age);
+    
+    // Native query with named parameters
+    @Query(value = "SELECT * FROM users WHERE age > :age ORDER BY :sortColumn", 
+           nativeQuery = true)
+    List<User> findUsersOlderThan(@Param("age") int age, 
+                                 @Param("sortColumn") String sortColumn);
+    
+    // Native query with projection
+    @Query(value = "SELECT id, name, email FROM users WHERE active = true", 
+           nativeQuery = true)
+    List<Object[]> findActiveUsersProjection();
+    
+    // Native query with pagination
+    @Query(value = "SELECT * FROM users WHERE department = :department",
+           countQuery = "SELECT COUNT(*) FROM users WHERE department = :department",
+           nativeQuery = true)
+    Page<User> findByDepartmentNative(@Param("department") String department, 
+                                     Pageable pageable);
+}
+```
+
+2. Using EntityManager for Native Query:
+
+```java
+@Repository
+public class CustomUserRepository {
+    
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    public List<User> findUsersByNativeQuery(String query) {
+        Query nativeQuery = entityManager.createNativeQuery(query, User.class);
+        return nativeQuery.getResultList();
+    }
+    
+    public int updateUsersNative(String department) {
+        Query nativeQuery = entityManager.createNativeQuery(
+            "UPDATE users SET status = 'INACTIVE' WHERE department = :dept"
+        );
+        nativeQuery.setParameter("dept", department);
+        return nativeQuery.executeUpdate();
+    }
+}
+```
+
+3. Complex Native Query Example:
+
+```java
+@Repository
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    
+    // Complex join with aggregation
+    @Query(value = 
+        "SELECT o.id, o.total, COUNT(oi.id) as item_count " +
+        "FROM orders o " +
+        "JOIN order_items oi ON o.id = oi.order_id " +
+        "WHERE o.created_date >= :startDate " +
+        "GROUP BY o.id, o.total " +
+        "HAVING COUNT(oi.id) > :minItems",
+        nativeQuery = true)
+    List<Object[]> findOrdersWithItemCount(@Param("startDate") LocalDate startDate,
+                                          @Param("minItems") int minItems);
+    
+    // Common Table Expression (CTE)
+    @Query(value =
+        "WITH RECURSIVE employee_tree AS (" +
+        "   SELECT id, name, manager_id, 0 as level " +
+        "   FROM employees " +
+        "   WHERE id = :empId " +
+        "   UNION ALL " +
+        "   SELECT e.id, e.name, e.manager_id, et.level + 1 " +
+        "   FROM employees e " +
+        "   JOIN employee_tree et ON e.manager_id = et.id " +
+        ") SELECT * FROM employee_tree",
+        nativeQuery = true)
+    List<Object[]> findEmployeeHierarchy(@Param("empId") Long empId);
+}
+```
+
+39. Explain the difference between Optimistic Locking and Pessimistic Locking in JPA?
+
+Answer:
+(See question 37 for detailed answer - this is a duplicate topic)
+
+REST APIs & Security
+
+40. What are the key design principles of a truly RESTful web service?
+
+Answer:
+REST (Representational State Transfer) Principles:
+
+1. Client-Server Separation: UI and data storage separated
+2. Stateless: Each request contains all required information
+3. Cacheable: Responses should be cacheable if possible
+4. Uniform Interface: Consistent API design
+5. Layered System: Architecture with layers
+6. Code on Demand (optional): Execute code from server
+
+Uniform Interface Details:
+
+· Resource Identification: Resources identified by URIs
+· Resource Manipulation: Use standard HTTP methods
+· Self-descriptive Messages: All information in request/response
+· HATEOAS: Hypermedia as Engine of Application State
+
+Example:
+
+```
+# RESTful API design
+GET    /api/users          # List users
+POST   /api/users          # Create user
+GET    /api/users/{id}     # Get user
+PUT    /api/users/{id}     # Update user
+DELETE /api/users/{id}     # Delete user
+GET    /api/users/{id}/orders  # Get user orders
+POST   /api/users/{id}/orders  # Create order
+```
+
+HTTP Status Codes:
+
+Category Range Examples
+Informational 1xx 100 Continue
+Success 2xx 200 OK, 201 Created, 204 No Content
+Redirection 3xx 301 Moved, 304 Not Modified
+Client Error 4xx 400 Bad Request, 401 Unauthorized, 404 Not Found
+Server Error 5xx 500 Internal Server Error, 503 Service Unavailable
+
+41. When should you use HTTP status codes 200, 201, 204, 400, 401, 403, and 500?
+
+Answer:
+
+Status Code Meaning Use Case
+200 OK Success GET request successful
+201 Created Resource created POST request with new resource
+204 No Content Success no content DELETE request
+400 Bad Request Client error Validation failure, malformed request
+401 Unauthorized Authentication required Missing/invalid authentication
+403 Forbidden Permission denied Insufficient permissions
+500 Internal Server Error Server error Unexpected exception
+
+Example:
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUser(@PathVariable Long id) {
+        User user = userService.findById(id);
+        if (user != null) {
+            return ResponseEntity.ok(user); // 200 OK
+        }
+        return ResponseEntity.notFound().build(); // 404 Not Found
+    }
+    
+    @PostMapping
+    public ResponseEntity<User> createUser(@Valid @RequestBody User user) {
+        User saved = userService.save(user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(saved); // 201 Created
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        userService.delete(id);
+        return ResponseEntity.noContent().build(); // 204 No Content
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<User> updateUser(@PathVariable Long id, 
+                                           @Valid @RequestBody User user) {
+        if (!userService.exists(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            User updated = userService.update(id, user);
+            return ResponseEntity.ok(updated); // 200 OK
+        } catch (ValidationException e) {
+            return ResponseEntity.badRequest().build(); // 400 Bad Request
+        }
+    }
+}
+
+// Global exception handler for status codes
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Void> handleAccessDenied() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); // 403
+    }
+    
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<Void> handleAuthentication() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build(); // 401
+    }
+    
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Void> handleException() {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // 500
+    }
+}
+```
+
+42. What is the purpose of @RequestBody, @RequestParam, and @PathVariable?
+
+Answer:
+
+Annotation Purpose Source Usage
+@RequestBody Binds HTTP request body to object Request body POST/PUT data
+@RequestParam Binds query parameters Query string GET filters, pagination
+@PathVariable Binds URI template variable URL path Resource IDs
+
+Examples:
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    // @RequestBody - HTTP request body
+    @PostMapping
+    public User createUser(@RequestBody User user) {
+        // user object from JSON in request body
+        return userService.save(user);
+    }
+    
+    // @RequestParam - Query parameters
+    @GetMapping
+    public List<User> getUsers(
+            @RequestParam(required = false) String name,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        // URL: /api/users?name=John&page=1&size=20
+        return userService.findUsers(name, page, size);
+    }
+    
+    // @PathVariable - URI template variables
+    @GetMapping("/{id}")
+    public User getUser(@PathVariable Long id) {
+        // URL: /api/users/123
+        return userService.findById(id);
+    }
+    
+    // Multiple @RequestParam
+    @GetMapping("/search")
+    public List<User> searchUsers(
+            @RequestParam("name") String name,
+            @RequestParam(value = "age", required = false) Integer age,
+            @RequestParam Map<String, String> allParams) {
+        // URL: /api/search?name=John&age=25&country=USA
+        // allParams contains all query parameters
+        return userService.search(name, age);
+    }
+    
+    // Multiple @PathVariable
+    @GetMapping("/{userId}/orders/{orderId}")
+    public Order getOrder(
+            @PathVariable("userId") Long userId,
+            @PathVariable("orderId") Long orderId) {
+        // URL: /api/users/123/orders/456
+        return orderService.find(userId, orderId);
+    }
+    
+    // @RequestBody with validation
+    @PostMapping("/validate")
+    public ResponseEntity<String> validateUser(
+            @Valid @RequestBody User user) {
+        // Spring automatically validates the user object
+        return ResponseEntity.ok("User validated");
+    }
+}
+```
+
+43. How does Spring Security authenticate a request? Explain the role of the SecurityFilterChain.
+
+Answer:
+Spring Security authentication flow:
+
+1. Request Interception: FilterChain intercepts all requests
+2. Authentication Filter: Extracts credentials (username/password, JWT, etc.)
+3. Authentication Manager: Authenticates the credentials
+4. UserDetailsService: Loads user details from database
+5. Authentication Object: Created with authorities and granted
+6. SecurityContext: Stored in SecurityContextHolder
+
+SecurityFilterChain Role:
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(authz -> authz
+                .requestMatchers("/public/**", "/auth/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
+                .anyRequest().authenticated()
+            )
+            .formLogin(form -> form
+                .loginPage("/login")
+                .permitAll()
+            )
+            .logout(logout -> logout
+                .permitAll()
+            )
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(csrf -> csrf.disable());
+        
+        return http.build();
+    }
+}
+```
+
+Authentication Flow Details:
+
+```java
+// Authentication process
+Authentication authentication = new UsernamePasswordAuthenticationToken(username, password);
+AuthenticationManager authManager = authenticationManagerBean();
+Authentication result = authManager.authenticate(authentication);
+
+// If successful
+SecurityContextHolder.getContext().setAuthentication(result);
+
+// UserDetailsService implementation
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+    
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        
+        return User.builder()
+            .username(user.getUsername())
+            .password(user.getPassword())
+            .authorities(user.getAuthorities())
+            .accountExpired(false)
+            .accountLocked(false)
+            .credentialsExpired(false)
+            .disabled(false)
+            .build();
+    }
+}
+```
+
+44. What are the three components of a JSON Web Token (JWT)? How does Spring Boot validate it?
+
+Answer:
+JWT consists of three parts:
+
+1. Header: Algorithm and token type
+   ```json
+   {
+     "alg": "HS256",
+     "typ": "JWT"
+   }
+   ```
+2. Payload: Claims (user data)
+   ```json
+   {
+     "sub": "1234567890",
+     "name": "John Doe",
+     "iat": 1516239022,
+     "exp": 1516242622
+   }
+   ```
+3. Signature: Verifies token integrity
+   ```
+   HMACSHA256(
+     base64UrlEncode(header) + "." +
+     base64UrlEncode(payload),
+     secret
+   )
+   ```
+
+Spring Boot JWT Validation:
+
+```java
+@Component
+public class JwtTokenProvider {
+    
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+    
+    @Value("${jwt.expiration}")
+    private int jwtExpiration;
+    
+    // Generate token
+    public String generateToken(String username) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtExpiration);
+        
+        return Jwts.builder()
+            .setSubject(username)
+            .setIssuedAt(now)
+            .setExpiration(expiryDate)
+            .signWith(SignatureAlgorithm.HS256, jwtSecret)
+            .compact();
+    }
+    
+    // Extract claims
+    public String getUsernameFromToken(String token) {
+        return Jwts.parser()
+            .setSigningKey(jwtSecret)
+            .parseClaimsJws(token)
+            .getBody()
+            .getSubject();
+    }
+    
+    // Validate token
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser().setSigningKey(jwtSecret).parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+}
+
+// JWT Authentication Filter
+@Component
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    
+    @Autowired
+    private JwtTokenProvider tokenProvider;
+    
+    @Autowired
+    private UserDetailsService userDetailsService;
+    
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, 
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        try {
+            String jwt = getJwtFromRequest(request);
+            
+            if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
+                String username = tokenProvider.getUsernameFromToken(jwt);
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                
+                Authentication authentication = new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities()
+                );
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+        } catch (Exception ex) {
+            logger.error("Could not set user authentication in security context", ex);
+        }
+        
+        filterChain.doFilter(request, response);
+    }
+    
+    private String getJwtFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
+    }
+}
+```
+
+45. How do you implement Method-Level Security (e.g., @PreAuthorize) in a Spring Boot application?
+
+Answer:
+Enable method-level security and use annotations on methods.
+
+Configuration:
+
+```java
+@Configuration
+@EnableGlobalMethodSecurity(
+    prePostEnabled = true,      // Enable @PreAuthorize, @PostAuthorize
+    securedEnabled = true,      // Enable @Secured
+    jsr250Enabled = true        // Enable @RolesAllowed
+)
+public class MethodSecurityConfig {
+    // Custom method security expression handler
+    @Bean
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
+        DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
+        handler.setPermissionEvaluator(customPermissionEvaluator());
+        return handler;
+    }
+    
+    @Bean
+    public PermissionEvaluator customPermissionEvaluator() {
+        return new CustomPermissionEvaluator();
+    }
+}
+```
+
+Usage Examples:
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @Autowired
+    private UserService userService;
+    
+    // Role-based authorization
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/admin")
+    public List<User> getAllUsers() {
+        return userService.findAll();
+    }
+    
+    // Permission-based authorization
+    @PreAuthorize("hasPermission(#id, 'User', 'read')")
+    @GetMapping("/{id}")
+    public User getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+    
+    // Method execution based on authentication
+    @PreAuthorize("#user.username == authentication.principal.username or hasRole('ADMIN')")
+    @PutMapping("/{id}")
+    public User updateUser(@PathVariable Long id, @RequestBody User user) {
+        return userService.update(id, user);
+    }
+    
+    // Post-authorization
+    @PostAuthorize("returnObject.username == authentication.principal.username or hasRole('ADMIN')")
+    @GetMapping("/profile")
+    public User getProfile() {
+        return userService.getCurrentUser();
+    }
+}
+
+@Service
+public class UserService {
+    
+    // Role-based authorization
+    @Secured("ROLE_ADMIN")
+    public void deleteUser(Long id) {
+        // Only admin can delete
+    }
+    
+    // JSR-250 annotation
+    @RolesAllowed({"USER", "ADMIN"})
+    public User getCurrentUser() {
+        // USER or ADMIN can access
+    }
+}
+```
+
+Custom Permission Evaluator:
+
+```java
+@Component
+public class CustomPermissionEvaluator implements PermissionEvaluator {
+    
+    @Autowired
+    private UserService userService;
+    
+    @Override
+    public boolean hasPermission(Authentication auth, Object targetDomainObject, Object permission) {
+        // Complex permission logic
+        if (targetDomainObject instanceof User) {
+            User user = (User) targetDomainObject;
+            return hasUserPermission(auth, user, permission.toString());
+        }
+        return false;
+    }
+    
+    @Override
+    public boolean hasPermission(Authentication auth, Serializable targetId, String targetType, Object permission) {
+        // Permission based on ID and type
+        if (targetType.equals("User")) {
+            User user = userService.findById((Long) targetId);
+            return hasUserPermission(auth, user, permission.toString());
+        }
+        return false;
+    }
+    
+    private boolean hasUserPermission(Authentication auth, User user, String permission) {
+        // Custom logic: if user owns the resource or has specific permission
+        String username = auth.getName();
+        if (user.getUsername().equals(username) && "read".equals(permission)) {
+            return true;
+        }
+        // Check if user has admin authority
+        return auth.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+}
+```
+
+46. What is the difference between Authentication and Authorization in Spring Security?
+
+Answer:
+
+Aspect Authentication Authorization
+Purpose Verify user identity Determine access rights
+Question Who are you? What can you do?
+Process Login, credential validation Permission checking
+Result Authenticated or not Allowed or denied
+Implementation UserDetailsService GrantedAuthority
+Annotations @AuthenticationPrincipal @PreAuthorize, @Secured
+
+Example:
+
+```java
+// Authentication - checking identity
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+    @Override
+    public UserDetails loadUserByUsername(String username) {
+        User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        
+        return User.builder()
+            .username(user.getUsername())
+            .password(user.getPassword())
+            .authorities(user.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
+                .collect(Collectors.toList()))
+            .build();
+    }
+}
+
+// Authorization - checking permissions
+@RestController
+public class SecureController {
+    
+    // Authentication required
+    @GetMapping("/user/info")
+    public UserInfo getUserInfo(Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        return user.getInfo();
+    }
+    
+    // Authorization required
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    @DeleteMapping("/admin/users/{id}")
+    public void deleteUser(@PathVariable Long id) {
+        // Only ADMIN can access
+    }
+    
+    // Check authorization in code
+    @GetMapping("/resource/{id}")
+    public Resource getResource(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!auth.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_ADMIN"))) {
+            throw new AccessDeniedException("Access Denied");
+        }
+        return resourceService.findById(id);
+    }
+}
+```
+
+47. How do you protect your Spring Boot REST APIs against Cross-Site Request Forgery (CSRF)?
+
+Answer:
+CSRF attacks exploit authenticated users to perform unauthorized actions.
+
+CSRF Protection Strategies:
+
+1. Synchronizer Token Pattern (Default in Spring Security)
+2. SameSite Cookies
+3. Double Submit Cookies
+
+Spring Security Configuration:
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(csrfTokenRepository()) // Token management
+                .csrfTokenRequestHandler(csrfTokenRequestHandler())
+                .ignoringRequestMatchers("/api/public/**") // Exclude public endpoints
+            )
+            // ... other configuration
+            ;
+        return http.build();
+    }
+    
+    // Store CSRF token in cookies for SPA applications
+    private CsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+        repository.setCookieHttpOnly(true);
+        repository.setCookieSecure(true);
+        repository.setCookiePath("/");
+        repository.setCookieName("XSRF-TOKEN");
+        return repository;
+    }
+}
+```
+
+AJAX Integration:
+
+```javascript
+// React/JavaScript with CSRF token
+const csrfToken = document.cookie
+    .split('; ')
+    .find(cookie => cookie.startsWith('XSRF-TOKEN'))
+    ?.split('=')[1];
+
+fetch('/api/users/update', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'X-XSRF-TOKEN': csrfToken  // Send token in header
+    },
+    body: JSON.stringify(data)
+});
+```
+
+Stateless JWT CSRF Protection:
+
+```java
+// When using JWT in stateless mode, CSRF can be disabled
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable()) // JWT is stateless
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
+            // ... JWT filter configuration
+            ;
+        return http.build();
+    }
+}
+```
+
+Testing & Code Quality
+
+48. What is the difference between @Mock and @InjectMocks in Mockito unit testing?
+
+Answer:
+
+Annotation Purpose Usage
+@Mock Creates mock implementation of class/interface Dependency objects
+@InjectMocks Creates instance of class and injects mocks Class being tested
+
+Example:
+
+```java
+@ExtendWith(MockitoExtension.class)
+public class UserServiceTest {
+    
+    @Mock
+    private UserRepository userRepository;  // Mock dependency
+    
+    @Mock
+    private EmailService emailService;      // Mock dependency
+    
+    @InjectMocks
+    private UserService userService;        // Class to test with injected mocks
+    
+    @Test
+    void testCreateUser() {
+        // Given
+        User user = new User("John", "john@email.com");
+        when(userRepository.save(any(User.class))).thenReturn(user);
+        
+        // When
+        User created = userService.createUser(user);
+        
+        // Then
+        assertNotNull(created);
+        verify(userRepository, times(1)).save(user);
+        verify(emailService, times(1)).sendWelcomeEmail(user);
+    }
+}
+
+// Alternative without annotations
+public class UserServiceManualTest {
+    
+    private UserRepository userRepository;
+    private EmailService emailService;
+    private UserService userService;
+    
+    @BeforeEach
+    void setup() {
+        userRepository = mock(UserRepository.class);
+        emailService = mock(EmailService.class);
+        userService = new UserService(userRepository, emailService);
+    }
+}
+```
+
+49. How do you perform integration testing for REST endpoints using @WebMvcTest or TestRestTemplate?
+
+Answer:
+
+1. Using @WebMvcTest (Controller Layer Testing):
+
+```java
+@WebMvcTest(UserController.class)
+public class UserControllerTest {
+    
+    @Autowired
+    private MockMvc mockMvc;
+    
+    @MockBean
+    private UserService userService;
+    
+    @Test
+    void testGetUser() throws Exception {
+        User user = new User(1L, "John", "john@email.com");
+        when(userService.findById(1L)).thenReturn(Optional.of(user));
+        
+        mockMvc.perform(get("/api/users/1")
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.name").value("John"));
+    }
+    
+    @Test
+    void testCreateUser() throws Exception {
+        User user = new User(null, "Alice", "alice@email.com");
+        User savedUser = new User(1L, "Alice", "alice@email.com");
+        
+        when(userService.save(any(User.class))).thenReturn(savedUser);
+        
+        mockMvc.perform(post("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(asJsonString(user)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists());
+    }
+    
+    private static String asJsonString(final Object obj) {
+        try {
+            return new ObjectMapper().writeValueAsString(obj);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
+2. Using @SpringBootTest with TestRestTemplate:
+
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+public class UserIntegrationTest {
+    
+    @LocalServerPort
+    private int port;
+    
+    @Autowired
+    private TestRestTemplate restTemplate;
+    
+    @Test
+    void testGetUser() {
+        ResponseEntity<User> response = restTemplate.getForEntity(
+            "http://localhost:" + port + "/api/users/1",
+            User.class
+        );
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getId()).isEqualTo(1L);
+    }
+    
+    @Test
+    void testCreateUser() {
+        User user = new User(null, "Bob", "bob@email.com");
+        
+        ResponseEntity<User> response = restTemplate.postForEntity(
+            "http://localhost:" + port + "/api/users",
+            user,
+            User.class
+        );
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getId()).isNotNull();
+    }
+}
+```
+
+3. Using @DataJpaTest for Repository Testing:
+
+```java
+@DataJpaTest
+public class UserRepositoryTest {
+    
+    @Autowired
+    private TestEntityManager entityManager;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @Test
+    void testFindByEmail() {
+        User user = new User("John", "john@email.com");
+        entityManager.persist(user);
+        
+        Optional<User> found = userRepository.findByEmail("john@email.com");
+        assertThat(found).isPresent();
+        assertThat(found.get().getName()).isEqualTo("John");
+    }
+}
+```
+
+50. What tools do you use to measure code coverage (e.g., Jacoco) and code quality (e.g., SonarQube)?
+
+Answer:
+
+Code Coverage Tools:
+
+1. Jacoco (Java Code Coverage):
+
+```xml
+<plugin>
+    <groupId>org.jacoco</groupId>
+    <artifactId>jacoco-maven-plugin</artifactId>
+    <version>0.8.8</version>
+    <executions>
+        <execution>
+            <goals>
+                <goal>prepare-agent</goal>
+            </goals>
+        </execution>
+        <execution>
+            <id>report</id>
+            <phase>prepare-package</phase>
+            <goals>
+                <goal>report</goal>
+            </goals>
+        </execution>
+        <execution>
+            <id>check</id>
+            <goals>
+                <goal>check</goal>
+            </goals>
+            <configuration>
+                <rules>
+                    <rule>
+                        <element>BUNDLE</element>
+                        <limits>
+                            <limit>
+                                <counter>INSTRUCTION</counter>
+                                <value>COVEREDRATIO</value>
+                                <minimum>0.80</minimum>
+                            </limit>
+                        </limits>
+                    </rule>
+                </rules>
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
+```
+
+2. JaCoCo with Gradle:
+
+```gradle
+plugins {
+    id 'jacoco'
+}
+
+jacocoTestReport {
+    reports {
+        xml.enabled true
+        html.enabled true
+    }
+    
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/config/**',
+                '**/dto/**',
+                '**/exception/**'
+            ])
+        }))
+    }
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.80
+            }
+        }
+    }
+}
+```
+
+Code Quality Tools:
+
+1. SonarQube Integration:
+
+```xml
+<plugin>
+    <groupId>org.sonarsource.scanner.maven</groupId>
+    <artifactId>sonar-maven-plugin</artifactId>
+    <version>3.9.1.2184</version>
+</plugin>
+
+<!-- Usage: mvn clean verify sonar:sonar -->
+```
+
+2. SonarQube Properties:
+
+```properties
+sonar.projectKey=my-project
+sonar.projectName=My Project
+sonar.projectVersion=1.0
+sonar.sources=src/main/java
+sonar.tests=src/test/java
+sonar.java.binaries=target/classes
+sonar.java.test.binaries=target/test-classes
+sonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+```
+
+3. Checkstyle Configuration:
+
+```xml
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-checkstyle-plugin</artifactId>
+    <version>3.1.2</version>
+    <configuration>
+        <configLocation>google_checks.xml</configLocation>
+        <encoding>UTF-8</encoding>
+        <consoleOutput>true</consoleOutput>
+        <failsOnError>true</failsOnError>
+        <linkXRef>false</linkXRef>
+    </configuration>
+    <executions>
+        <execution>
+            <id>validate</id>
+            <phase>validate</phase>
+            <goals>
+                <goal>check</goal>
+            </goals>
+        </execution>
+    </executions>
+</plugin>
+```
+
+Combined Quality Gates:
+
+```yaml
+# .gitlab-ci.yml or GitHub Actions
+quality-gate:
+  stage: quality
+  script:
+    - mvn clean verify
+    - mvn sonar:sonar
+    - mvn jacoco:report
+  coverage: '/Code Coverage: ([0-9.]+)%/'
+  artifacts:
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    paths:
+      - target/site/jacoco/
+```
